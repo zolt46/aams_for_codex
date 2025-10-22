@@ -57,6 +57,8 @@ let lastIdentifyEvent = null;
 let lastIdentifyAt = 0;
 let lastSerialEventAt = 0;
 
+const timeNow = () => Date.now();
+
 async function listCandidates(){
   const ports = await SerialPort.list();
   const preferred = [];
@@ -123,14 +125,14 @@ async function forwardToRender(obj){
       body: JSON.stringify({ site: FP_SITE, data: obj })
     });
     if (!res.ok){
-      forwardStatus.lastErrorAt = now();
+      forwardStatus.lastErrorAt = timeNow();
       const text = await res.text().catch(() => '');
       warn('forward failed:', res.status, res.statusText, text || '');
     } else {
-      forwardStatus.lastOkAt = now();
+      forwardStatus.lastOkAt = timeNow();
     }
   } catch (err) {
-    forwardStatus.lastErrorAt = now();
+    forwardStatus.lastErrorAt = timeNow();
     warn('forward error:', err.message || err);
   }
 }
@@ -181,7 +183,7 @@ function applyLedCommand(command){
   ledState.color = payload.color || ledState.color;
   if (payload.speed !== undefined && !Number.isNaN(payload.speed)) ledState.speed = payload.speed;
   if (payload.cycles !== undefined && !Number.isNaN(payload.cycles)) ledState.cycles = payload.cycles;
-  ledState.lastCommandAt = now();
+  ledState.lastCommandAt = timeNow();
   ledState.pending = true;
   if (!ok){
     ledState.ok = false;
@@ -192,7 +194,7 @@ function applyLedCommand(command){
 
 function manualIdentifyActive(){
   if (!manualIdentifyRequested) return false;
-  if (manualIdentifyDeadline && now() > manualIdentifyDeadline){
+  if (manualIdentifyDeadline && timeNow() > manualIdentifyDeadline){
     stopManualIdentify('timeout', { turnOffLed: true });
     return false;
   }
@@ -208,7 +210,7 @@ function startManualIdentify(options = {}){
     stopManualIdentify('replaced', { turnOffLed: false });
   }
   manualSessionCounter += 1;
-  const startAt = now();
+  const startAt = timeNow();
   const timeoutMs = Math.max(3000, Number(options.timeoutMs) || 60000);
   const ledOn = options.led === false ? null : (normalizeLedCommand(options.led) || DEFAULT_LED_ON);
   const ledOff = options.ledOff === false ? null : (normalizeLedCommand(options.ledOff || options.onStopLed) || DEFAULT_LED_OFF);
@@ -234,7 +236,7 @@ function stopManualIdentify(reason = 'manual_stop', { turnOffLed = true, ledOver
   if (manualSession){
     manualSession.active = false;
     manualSession.reason = reason;
-    manualSession.stoppedAt = now();
+    manualSession.stoppedAt = timeNow();
   }
   manualIdentifyRequested = false;
   manualIdentifyDeadline = 0;
@@ -324,11 +326,11 @@ async function openAndWire(){
     try { obj = JSON.parse(line); }
     catch { obj = { raw: line }; }
     parser.emit('dataLine', obj);
-    lastSerialEventAt = now();
+    lastSerialEventAt = timeNow();
 
     if (obj && obj.type === 'identify'){
       lastIdentifyEvent = { ...obj };
-      lastIdentifyAt = now();
+      lastIdentifyAt = timeNow();
       if (obj.ok) stopManualIdentify('matched', { turnOffLed: true });
     }
     if (obj && obj.type === 'led'){
@@ -338,12 +340,12 @@ async function openAndWire(){
       if (obj.cycles !== undefined) ledState.cycles = obj.cycles;
       ledState.ok = obj.ok !== false;
       ledState.pending = false;
-      ledState.lastCommandAt = now();
+      ledState.lastCommandAt = timeNow();
     }
     if (obj && obj.error === 'led_failed'){
       ledState.ok = false;
       ledState.pending = false;
-      ledState.lastCommandAt = now();
+      ledState.lastCommandAt = timeNow();
     }
 
     wsBroadcast(obj);
@@ -383,7 +385,7 @@ function buildHealthPayload(){
   const manualActive = manualIdentifyActive();
   return {
     ok: true,
-    time: now(),
+    time: timeNow(),
     serial: {
       connected: !!(serial && serial.isOpen),
       path: (serial && serial.path) || lastGoodPath || null,

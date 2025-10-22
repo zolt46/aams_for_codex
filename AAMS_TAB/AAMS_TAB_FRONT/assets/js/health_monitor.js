@@ -32,14 +32,15 @@ function ensureMonitorElement() {
   el.dataset.bound = "1";
   el.setAttribute("role", "status");
   el.setAttribute("aria-live", "polite");
+  el.setAttribute("aria-label", "시스템 연결 상태");
   el.innerHTML = `
-    <div class="status-monitor-heading">연결 상태</div>
-    <div class="status-monitor-items">
+    <div class="status-monitor-heading" aria-hidden="true">연결</div>
+    <div class="status-monitor-items" role="list">
       ${createItemTemplate("render", "서버")}
       ${createItemTemplate("db", "DB")}
       ${createItemTemplate("local", "로컬")}
     </div>
-    <div class="status-monitor-updated">업데이트: <span data-role="updated">—</span></div>
+    <div class="status-monitor-updated">업데이트 <span data-role="updated">—</span></div>
   `;
 
   monitorEl = el;
@@ -49,30 +50,20 @@ function ensureMonitorElement() {
 
 function createItemTemplate(key, label) {
   return `
-    <div class="status-item" data-key="${key}" data-state="checking">
-      <div class="status-header">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span class="status-label">${label}</span>
-      </div>
-      <div class="status-value">확인중…</div>
-      <div class="status-detail" hidden></div>
+    <div class="status-item" role="listitem" data-key="${key}" data-state="checking">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span class="status-label">${label}</span>
+      <span class="status-value">확인중…</span>
+      <span class="status-detail sr-only"></span>
     </div>
   `;
 }
 
 function placeMonitor() {
   const el = ensureMonitorElement();
-  const top = document.getElementById("top");
-  document.body?.classList?.add("has-status-monitor");
-  if (top && top.parentNode) {
-    if (el.previousElementSibling !== top) {
-      top.insertAdjacentElement("afterend", el);
-    }
-  } else {
-    const host = document.querySelector(".auth-shell") || document.querySelector("main") || document.body;
-    if (!el.parentNode || el.parentNode !== host.parentNode) {
-      host.parentNode?.insertBefore?.(el, host) || document.body.prepend(el);
-    }
+  const body = document.body || document.getElementsByTagName("body")[0];
+  if (body && el.parentNode !== body) {
+    body.appendChild(el);
   }
   return el;
 }
@@ -85,14 +76,13 @@ function setState(key, state, value, detail) {
   if (valueEl) valueEl.textContent = value;
   const detailEl = el.querySelector(".status-detail");
   if (detailEl) {
-    if (detail) {
-      detailEl.textContent = detail;
-      detailEl.hidden = false;
-    } else {
-      detailEl.textContent = "";
-      detailEl.hidden = true;
-    }
+    detailEl.textContent = detail || "";
+    detailEl.setAttribute("aria-hidden", detail ? "false" : "true");
   }
+  const label = el.querySelector(".status-label")?.textContent || key;
+  const tooltip = detail ? `${label}: ${detail}` : `${label}: ${value}`;
+  el.setAttribute("title", tooltip);
+  el.setAttribute("aria-label", `${label} ${value}${detail ? `, ${detail}` : ""}`);
 }
 
 function markChecking() {
