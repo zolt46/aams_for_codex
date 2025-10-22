@@ -320,11 +320,15 @@ function wire(rows = [], me = null) {
 }
 
 function updateDashboardStats({ pendingCount = "-", latest = "-" } = {}) {
-  const pendingEl = document.getElementById("pending-count");
-  if (pendingEl) pendingEl.textContent = formatCount(pendingCount);
+  const pendingText = formatCount(pendingCount);
+  document.querySelectorAll('#pending-count, [data-stat="pending-count"]').forEach((el) => {
+    el.textContent = pendingText;
+  });
 
-  const latestEl = document.getElementById("latest-request");
-  if (latestEl) latestEl.textContent = latest && latest !== "-" ? latest : "-";
+  const latestText = latest && latest !== "-" ? latest : "-";
+  document.querySelectorAll('#latest-request, [data-stat="latest-request"]').forEach((el) => {
+    el.textContent = latestText;
+  });
 }
 
 function formatCount(value) {
