@@ -92,75 +92,120 @@ export async function initUserMain() {
   }
 
 
-  const list = document.getElementById("pending-list");
-  const toggleBtn = document.getElementById("pending-toggle");
+  const pendingList = document.getElementById("pending-list");
+  const pendingToggle = document.getElementById("pending-toggle");
+  const historyList = document.getElementById("history-list");
+  const historyToggle = document.getElementById("history-toggle");
 
-  const setCollapsed = (collapsed) => {
-    if (!list) return;
-    list.classList.toggle("collapsed", collapsed);
-    if (toggleBtn) {
-      toggleBtn.textContent = collapsed ? "펼치기" : "접기";
-      toggleBtn.setAttribute("aria-expanded", String(!collapsed));
-    }
-  };
+  const pendingControls = bindCollapsible(pendingList, pendingToggle, { defaultCollapsed: false });
+  const historyControls = bindCollapsible(historyList, historyToggle, { defaultCollapsed: false });
 
-  setCollapsed(false);
+ if (!pendingList) return;
 
-  if (toggleBtn) {
-    toggleBtn.addEventListener("click", () => {
-      const current = list?.classList.contains("collapsed");
-      setCollapsed(!current);
-    });
+  updateDashboardStats({ pendingCount: "-", totalApproved: "-", latest: "-" });
+
+  pendingControls.setDisabled(true);
+  historyControls.setDisabled(true);
+
+  if (historyList) {
+    historyList.innerHTML = `<div class="muted">불러오는 중…</div>`;
   }
 
-  if (!list) return;
-
-  updateDashboardStats({ pendingCount: "-", latest: "-" });
-
-  if (toggleBtn) toggleBtn.disabled = true;
-
   if (!me?.id) {
-    list.innerHTML = `<div class="error">사용자 정보를 확인할 수 없습니다.</div>`;
+    pendingList.innerHTML = `<div class="error">사용자 정보를 확인할 수 없습니다.</div>`;
+    if (historyList) historyList.innerHTML = `<div class="muted">이력 정보를 확인할 수 없습니다.</div>`;
     return;
   }
 
-  list.innerHTML = `<div class="muted">불러오는 중…</div>`;
+  pendingList.innerHTML = `<div class="muted">불러오는 중…</div>`;
 
   try {
     const rows = await fetchUserPending(me.id) || [];
     rows.sort((a, b) => new Date(getLatestApprovalTimestamp(b) || 0) - new Date(getLatestApprovalTimestamp(a) || 0));
 
     const pendingRows = rows.filter((row) => isExecutionPendingStatus(row?.status));
+    const completedRows = rows.filter((row) => !isExecutionPendingStatus(row?.status));
+    completedRows.sort((a, b) => new Date(getExecutionTimestamp(b) || 0) - new Date(getExecutionTimestamp(a) || 0));
 
-    if (toggleBtn) toggleBtn.disabled = !pendingRows.length;
+    pendingControls.setDisabled(!pendingRows.length);
+    historyControls.setDisabled(!completedRows.length);
+
+    const latestApprovalTs = rows.length ? formatKST(getLatestApprovalTimestamp(rows[0])) : "-";
 
     updateDashboardStats({
       pendingCount: pendingRows.length,
-      latest: pendingRows.length ? formatKST(getLatestApprovalTimestamp(pendingRows[0])) : "-"
+      totalApproved: rows.length,
+      latest: latestApprovalTs
     });
 
     if (!pendingRows?.length) {
-      list.innerHTML = `<div class="muted">집행 대기 건이 없습니다.</div>`;
-      return;
+      pendingList.innerHTML = `<div class="muted">집행 대기 건이 없습니다.</div>`;
+    } else {
+      pendingList.innerHTML = pendingRows.map((row) => renderCard(row)).join("");
+      wire(pendingRows, me, { container: pendingList });
     }
 
-    list.innerHTML = pendingRows.map(renderCard).join("");
-    wire(pendingRows, me);
+    if (historyList) {
+      if (completedRows.length) {
+        historyList.innerHTML = completedRows.map((row) => renderCard(row, { variant: "history" })).join("");
+        historyControls.setCollapsed(false);
+        wire(completedRows, me, { container: historyList });
+      } else {
+        historyList.innerHTML = `<div class="muted">집행 완료된 이력이 없습니다.</div>`;
+        historyControls.setCollapsed(true);
+      }
+    }
   } catch (e) {
     const message = escapeHtml(e?.message || "오류가 발생했습니다.");
-    list.innerHTML = `<div class="error">불러오기 실패: ${message}</div>`;
-    updateDashboardStats({ pendingCount: "-", latest: "-" });
-    if (toggleBtn) toggleBtn.disabled = false;
+    pendingList.innerHTML = `<div class="error">불러오기 실패: ${message}</div>`;
+    if (historyList) historyList.innerHTML = `<div class="muted">이력을 불러오지 못했습니다.</div>`;
+    updateDashboardStats({ pendingCount: "-", totalApproved: "-", latest: "-" });
+    pendingControls.setDisabled(false);
+    historyControls.setDisabled(false);
   }
 }
 
-function renderCard(r) {
+function bindCollapsible(listEl, toggleEl, { defaultCollapsed = false } = {}) {
+  if (!listEl) {
+    return {
+      setCollapsed: () => {},
+      setDisabled: () => {}
+    };
+  }
+
+  const setCollapsed = (collapsed) => {
+    listEl.classList.toggle("collapsed", !!collapsed);
+    if (toggleEl) {
+      toggleEl.textContent = collapsed ? "펼치기" : "접기";
+      toggleEl.setAttribute("aria-expanded", String(!collapsed));
+    }
+  };
+
+  const setDisabled = (disabled) => {
+    if (!toggleEl) return;
+    toggleEl.disabled = !!disabled;
+  };
+
+  setCollapsed(!!defaultCollapsed);
+
+  if (toggleEl) {
+    toggleEl.addEventListener("click", () => {
+      const current = listEl.classList.contains("collapsed");
+      setCollapsed(!current);
+    });
+  }
+
+  return { setCollapsed, setDisabled };
+}
+
+function renderCard(r, { variant = "pending" } = {}) {
   const requestId = r?.id ?? r?.raw?.id ?? "";
   const idValue = String(requestId ?? "");
   const idLabel = idValue ? `REQ-${idValue.padStart(4, "0")}` : "REQ----";
   const typeText = r.type === "ISSUE" ? "불출" : (r.type === "RETURN" ? "불입" : (r.type || "요청"));
   const requestedAt = formatKST(r.requested_at || r.created_at) || "-";
   const approvedAt = formatKST(getLatestApprovalTimestamp(r)) || "-";
+  const executedAt = variant === "history" ? (formatKST(getExecutionTimestamp(r)) || "-") : null;
   const statusInfo = resolveStatusInfo(r.status);
   const statusLabel = statusInfo.label;
   const statusClass = `status-${sanitizeToken(statusInfo.key || r.status || "pending")}`;
@@ -168,13 +213,15 @@ function renderCard(r) {
   const requester = r.requester_name ?? r.raw?.requester_name ?? r.raw?.requester?.name ?? "-";
   const weaponCode = r.weapon_code ?? r.weapon?.code ?? r.raw?.weapon_code ?? r.raw?.weapon?.code ?? "-";
   const executeState = getExecuteButtonState(r, statusInfo);
-  const executionHint = renderExecutionHint(statusInfo);
+  const executionHint = variant === "history" ? "" : renderExecutionHint(statusInfo);
   const statusReason = formatStatusReason(r);
   const summaryNotice = renderStatusNotice(statusInfo, statusReason, { variant: "summary" });
   const detailNotice = renderStatusNotice(statusInfo, statusReason);
+  const classes = ["card", "pending-card"];
+  if (variant === "history") classes.push("history-card");
 
   return `
-    <article class="card pending-card" data-id="${escapeHtml(requestId)}">
+    <article class="${classes.join(" ")}" data-id="${escapeHtml(requestId)}">
       <header class="card-header">
         <div class="card-title">
           <span class="chip">${escapeHtml(idLabel)}</span>
@@ -203,12 +250,18 @@ function renderCard(r) {
           <span class="label">승인 시간</span>
           <span class="value">${escapeHtml(approvedAt)}</span>
         </div>
+        ${executedAt ? `
+        <div class="summary-item">
+          <span class="label">집행 완료</span>
+          <span class="value">${escapeHtml(executedAt)}</span>
+        </div>` : ""}
       </div>
       ${summaryNotice}
       <footer class="card-actions">
+        ${variant === "history" ? "" : `
         <button class="btn primary" data-act="execute" data-id="${escapeHtml(requestId)}"${executeState.disabled ? " disabled" : ""}>
           <span class="btn-label">${escapeHtml(executeState.label)}</span>
-        </button>
+        </button>`}
         <button class="btn ghost detail-btn" data-act="detail" data-id="${escapeHtml(requestId)}" aria-expanded="false">
           <span class="btn-label">상세 보기</span>
           <span class="chevron">⌄</span>
@@ -236,6 +289,11 @@ function renderCard(r) {
             <span class="term">승인 시간</span>
             <span class="desc">${escapeHtml(approvedAt)}</span>
           </div>
+          ${executedAt ? `
+          <div>
+            <span class="term">집행 완료</span>
+            <span class="desc">${escapeHtml(executedAt)}</span>
+          </div>` : ""}
           <div>
             <span class="term">총기</span>
             <span class="desc">${escapeHtml(weaponCode || "-")}</span>
@@ -264,7 +322,7 @@ function formatKST(ts) {
   return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
-function wire(rows = [], me = null) {
+function wire(rows = [], me = null, { container = document } = {}) {
   const requestMap = new Map();
   (rows || []).forEach((row) => {
     const key = String(row?.id ?? row?.raw?.id ?? "");
@@ -273,7 +331,7 @@ function wire(rows = [], me = null) {
     }
   });
 
-  document.querySelectorAll('[data-act="detail"]').forEach((btn) => {
+  (container?.querySelectorAll?.('[data-act="detail"]') || []).forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-id");
       const detail = document.querySelector(`.card-detail[data-id="${id}"]`);
@@ -287,7 +345,7 @@ function wire(rows = [], me = null) {
     });
   });
 
-  document.querySelectorAll('[data-act="execute"]').forEach((btn) => {
+  (container?.querySelectorAll?.('[data-act="execute"]') || []).forEach((btn) => {
     btn.addEventListener("click", async () => {
       const label = btn.querySelector(".btn-label");
       const original = label ? label.textContent : btn.textContent;
@@ -330,16 +388,30 @@ function wire(rows = [], me = null) {
   });
 }
 
-function updateDashboardStats({ pendingCount = "-", latest = "-" } = {}) {
+function updateDashboardStats({ pendingCount = "-", totalApproved = "-", latest = "-" } = {}) {
   const pendingText = formatCount(pendingCount);
   document.querySelectorAll('#pending-count, [data-stat="pending-count"]').forEach((el) => {
     el.textContent = pendingText;
+  });
+
+  const totalText = formatCount(totalApproved);
+  document.querySelectorAll('#total-approved, [data-stat="total-approved"]').forEach((el) => {
+    el.textContent = totalText;
   });
 
   const latestText = latest && latest !== "-" ? latest : "-";
   document.querySelectorAll('#latest-request, [data-stat="latest-request"]').forEach((el) => {
     el.textContent = latestText;
   });
+}
+
+function getExecutionTimestamp(row = {}) {
+  return row?.executed_at
+    || row?.raw?.executed_at
+    || row?.raw?.execution_completed_at
+    || row?.updated_at
+    || getLatestApprovalTimestamp(row)
+    || null;
 }
 
 function formatCount(value) {

@@ -740,7 +740,8 @@ button:disabled {
   cursor: not-allowed;
   background: rgba(255, 255, 255, 0.05);
 }
-.pending-list.collapsed { display: none; }
+.pending-list.collapsed,
+.history-list.collapsed { display: none; }
 
 #me-brief .overview {
   display: flex;

@@ -627,7 +627,7 @@ app.delete('/api/ammunition/:id', async (req, res) => {
     }
   }
 
-  async function finalizeRequestExecution(client, requestRow, executedBy, { notes = null } = {}) {
+  async function finalizeRequestExecution(client, requestRow, executedBy, { notes = null, statusReason = null } = {}) {
     const id = requestRow.id;
     const eventType = requestRow.request_type || requestRow.type || 'EXECUTION';
     const ev = await client.query(
@@ -671,7 +671,7 @@ app.delete('/api/ammunition/:id', async (req, res) => {
       }
     }
 
-    await client.query(`UPDATE requests SET status='EXECUTED', status_reason=NULL, updated_at=now() WHERE id=$1`, [id]);
+    await client.query(`UPDATE requests SET status='EXECUTED', status_reason=$2, updated_at=now() WHERE id=$1`, [id, statusReason || null]);
     return { eventId: execId };
   }
 
@@ -765,7 +765,12 @@ app.delete('/api/ammunition/:id', async (req, res) => {
         const execReq = await client.query(`SELECT id, executed_by FROM execution_events WHERE request_id=$1 AND event_type='EXECUTION_REQUEST' ORDER BY executed_at DESC LIMIT 1`, [requestId]);
         const executedBy = job?.executedBy || job?.executorId || (execReq.rowCount ? execReq.rows[0].executed_by : null);
         const completionNotes = toJsonNotes({ stage: 'completed', job, site });
-        await finalizeRequestExecution(client, requestRow, executedBy, { notes: completionNotes });
+        const successReason = job?.message
+          || (job?.summary?.actionLabel ? `${job.summary.actionLabel} 완료` : '장비 제어가 정상적으로 완료되었습니다.');
+        await finalizeRequestExecution(client, requestRow, executedBy, {
+          notes: completionNotes,
+          statusReason: successReason
+        });
         if (eventId) {
           await client.query(`UPDATE execution_events SET notes=$1 WHERE id=$2`, [completionNotes, eventId]);
         }
@@ -1274,13 +1279,17 @@ app.post('/api/requests/:id/execute', async (req,res)=>{
 
   try {
     if (!LOCAL_BRIDGE_URL) {
+      if (dispatchPayload) {
+        throw httpError(503, '로컬 브릿지가 설정되지 않았습니다');
+      }
       const result = await withTx(async (client) => {
         const rq = await client.query(`SELECT * FROM requests WHERE id=$1 FOR UPDATE`, [id]);
         if (!rq.rowCount) throw httpError(404, 'not found');
         const requestRow = rq.rows[0];
         if (requestRow.status !== 'APPROVED') throw httpError(400, 'not approved');
         await finalizeRequestExecution(client, requestRow, executed_by, {
-          notes: toJsonNotes({ stage: 'immediate', dispatch: dispatchPayload })
+          notes: toJsonNotes({ stage: 'immediate', dispatch: dispatchPayload, reason: 'local_bridge_missing' }),
+          statusReason: '로컬 브릿지 없이 즉시 처리되었습니다.'
         });
         return { request: requestRow };
       });

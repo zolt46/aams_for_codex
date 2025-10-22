@@ -246,11 +246,11 @@ export function renderMeBrief(me = {}) {
     </div>
     <div class="overview-stats">
       <div class="stat-card">
-        <span class="label">총 승인 건수</span>
-        <span class="value" data-stat="pending-count">-</span>
+        <span class="label">총 승인</span>
+        <span class="value" data-stat="total-approved">-</span>
       </div>
       <div class="stat-card">
-        <span class="label">최근 요청</span>
+        <span class="label">최근 승인</span>
         <span class="value" data-stat="latest-request">-</span>
       </div>
     </div>
