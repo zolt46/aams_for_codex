@@ -2,6 +2,7 @@ import { getApiBase, getFpLocalBase } from "./util.js";
 
 const POLL_INTERVAL_MS = 10000;
 const INITIAL_TIMEOUT_MS = 4500;
+const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 let monitorEl = null;
 let lastUpdatedEl = null;
@@ -123,6 +124,39 @@ function describeError(err) {
   return "연결 오류";
 }
 
+function formatRobotSummary(summary) {
+  if (!summary || typeof summary !== "object") return "";
+  const parts = [];
+  const action = summary.actionLabel || summary.action;
+  if (action) parts.push(action);
+  const includes = summary.includes;
+  if (includes && typeof includes === "object") {
+    if (includes.label) {
+      parts.push(includes.label);
+    } else {
+      const includeParts = [];
+      if (includes.firearm) includeParts.push("총기");
+      if (includes.ammo) includeParts.push("탄약");
+      if (includeParts.length) parts.push(includeParts.join("+"));
+    }
+  }
+  if (summary.firearmCode) {
+    parts.push(`총기 ${summary.firearmCode}`);
+  }
+  if (summary.ammoSummary) {
+    parts.push(`탄약 ${summary.ammoSummary}`);
+  } else if (typeof summary.ammoCount === "number") {
+    parts.push(`탄약 ${numberFormatter.format(summary.ammoCount)}`);
+  }
+  if (!summary.firearmCode && summary.locker) {
+    parts.push(`보관 ${summary.locker}`);
+  }
+  if (summary.site) {
+    parts.push(`현장 ${summary.site}`);
+  }
+  return parts.join(" · ");
+}
+
 export async function refreshStatusMonitor() {
   ensureMonitorElement();
   placeMonitor();
@@ -177,6 +211,8 @@ export async function refreshStatusMonitor() {
       const running = !!local.data?.identify?.running;
       const sessionInfo = local.data?.identify?.manual;
       const path = local.data?.serial?.path;
+      const activeSummaryText = formatRobotSummary(activeRobot?.summary);
+      const lastSummaryText = formatRobotSummary(lastRobot?.summary);
 
       if (!serialConnected) {
         localState = "degraded";
@@ -187,7 +223,8 @@ export async function refreshStatusMonitor() {
         localValue = "장비 동작 중";
         const stage = activeRobot.stage ? `${activeRobot.stage}` : "장비 명령";
         const message = activeRobot.message || "장비 제어 진행 중";
-        localDetail = `${message} (${stage})`;
+        const summaryInfo = activeSummaryText ? `${activeSummaryText}` : "";
+        localDetail = summaryInfo ? `${summaryInfo} · ${message} (${stage})` : `${message} (${stage})`;
       } else if (manualActive || running) {
         localState = "online";
         localValue = "스캔 중";
@@ -201,7 +238,8 @@ export async function refreshStatusMonitor() {
       } else if (lastRobot && lastRobot.status === "failed") {
         localState = "degraded";
         localValue = "장비 오류";
-        localDetail = lastRobot.message || "최근 장비 명령 실패";
+        const summaryInfo = lastSummaryText ? `${lastSummaryText} · ` : "";
+        localDetail = `${summaryInfo}${lastRobot.message || "최근 장비 명령 실패"}`;
       } else if (robot.enabled === false) {
         localState = "degraded";
         localValue = "장비 비활성";
@@ -213,7 +251,8 @@ export async function refreshStatusMonitor() {
       } else {
         localState = "online";
         localValue = "대기 중";
-        localDetail = path ? `센서 연결됨 (${path})` : "센서 연결됨";
+        const baseDetail = path ? `센서 연결됨 (${path})` : "센서 연결됨";
+        localDetail = lastSummaryText ? `${baseDetail} · 마지막 ${lastSummaryText}` : baseDetail;
       }
     }
     setState("local", localState, localValue, localDetail);

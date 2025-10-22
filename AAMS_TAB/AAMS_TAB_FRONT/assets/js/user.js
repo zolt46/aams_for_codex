@@ -54,6 +54,15 @@ const STATUS_METADATA = {
   }
 };
 
+const EXECUTION_COMPLETE_STATUSES = new Set(["EXECUTED", "COMPLETED"]);
+
+function isExecutionPendingStatus(status) {
+  const key = String(status || "").trim().toUpperCase();
+  if (!key) return false;
+  if (EXECUTION_COMPLETE_STATUSES.has(key)) return false;
+  return true;
+}
+
 function getLatestApprovalTimestamp(row = {}) {
   const approvalFromDetail = Array.isArray(row?.raw?.approvals)
     ? row.raw.approvals
@@ -121,20 +130,22 @@ export async function initUserMain() {
     const rows = await fetchUserPending(me.id) || [];
     rows.sort((a, b) => new Date(getLatestApprovalTimestamp(b) || 0) - new Date(getLatestApprovalTimestamp(a) || 0));
 
-    if (toggleBtn) toggleBtn.disabled = !rows.length;
+    const pendingRows = rows.filter((row) => isExecutionPendingStatus(row?.status));
+
+    if (toggleBtn) toggleBtn.disabled = !pendingRows.length;
 
     updateDashboardStats({
-      pendingCount: rows.length,
-      latest: rows.length ? formatKST(getLatestApprovalTimestamp(rows[0])) : "-"
+      pendingCount: pendingRows.length,
+      latest: pendingRows.length ? formatKST(getLatestApprovalTimestamp(pendingRows[0])) : "-"
     });
 
-    if (!rows?.length) {
+    if (!pendingRows?.length) {
       list.innerHTML = `<div class="muted">집행 대기 건이 없습니다.</div>`;
       return;
     }
 
-    list.innerHTML = rows.map(renderCard).join("");
-    wire(rows, me);
+    list.innerHTML = pendingRows.map(renderCard).join("");
+    wire(pendingRows, me);
   } catch (e) {
     const message = escapeHtml(e?.message || "오류가 발생했습니다.");
     list.innerHTML = `<div class="error">불러오기 실패: ${message}</div>`;

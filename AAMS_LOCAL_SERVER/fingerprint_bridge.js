@@ -82,8 +82,139 @@ const robotState = {
   lastEventAt: 0
 };
 
-
 const timeNow = () => Date.now();
+
+function cleanObject(obj){
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)){
+    for (let i = obj.length - 1; i >= 0; i -= 1){
+      const item = obj[i];
+      if (item && typeof item === 'object'){
+        cleanObject(item);
+        if (item && typeof item === 'object' && !Object.keys(item).length){
+          obj.splice(i, 1);
+          continue;
+        }
+      }
+      if (item === null || item === undefined || (typeof item === 'string' && item.trim() === '')){
+        obj.splice(i, 1);
+      }
+    }
+    return obj;
+  }
+  for (const key of Object.keys(obj)){
+    const value = obj[key];
+    if (value === null || value === undefined){
+      delete obj[key];
+      continue;
+    }
+    if (typeof value === 'string'){
+      const trimmed = value.trim();
+      if (!trimmed){
+        delete obj[key];
+        continue;
+      }
+      obj[key] = trimmed;
+      continue;
+    }
+    if (Array.isArray(value)){
+      cleanObject(value);
+      if (!value.length){
+        delete obj[key];
+      }
+      continue;
+    }
+    if (typeof value === 'object'){
+      cleanObject(value);
+      if (!Object.keys(value).length){
+        delete obj[key];
+      }
+    }
+  }
+  return obj;
+}
+
+function summarizeRobotPayload(payload = {}){
+  if (!payload || typeof payload !== 'object') return null;
+
+  const includesInput = (payload.includes && typeof payload.includes === 'object') ? payload.includes : {};
+  const hasFirearmFlag = Object.prototype.hasOwnProperty.call(includesInput, 'firearm');
+  const hasAmmoFlag = Object.prototype.hasOwnProperty.call(includesInput, 'ammo');
+
+  const firearmIncluded = hasFirearmFlag ? !!includesInput.firearm : !!payload.firearm;
+  const ammoIncluded = hasAmmoFlag ? !!includesInput.ammo : (Array.isArray(payload.ammo) && payload.ammo.length > 0);
+
+  let action = String(payload.mode || '').toLowerCase();
+  const typeRaw = String(payload.type || payload.request_type || '').toUpperCase();
+  if (!action){
+    if (typeRaw === 'RETURN') action = 'return';
+    else if (typeRaw === 'DISPATCH' || typeRaw === 'ISSUE') action = 'dispatch';
+  }
+  if (!action){
+    action = firearmIncluded || ammoIncluded ? 'dispatch' : 'unknown';
+  }
+
+  const firearm = payload.firearm || {};
+  const firearmCode = firearm.code
+    || firearm.firearm_number
+    || firearm.serial
+    || firearm.weapon_code
+    || payload.weapon_code
+    || payload.weaponCode
+    || null;
+
+  const locker = firearm.locker
+    || firearm.locker_code
+    || firearm.lockerCode
+    || payload.locker
+    || payload.storage
+    || payload.storage_code
+    || null;
+
+  const ammoItems = Array.isArray(payload.ammo) ? payload.ammo : [];
+  const ammoSummaryParts = [];
+  let ammoCount = 0;
+  for (const item of ammoItems){
+    if (!item || typeof item !== 'object') continue;
+    const caliber = (item.caliber || item.type || item.name || item.label || '').toString().trim();
+    const qtyRaw = item.qty ?? item.quantity ?? item.amount ?? item.count;
+    const qty = Number(qtyRaw);
+    if (Number.isFinite(qty)){
+      ammoCount += qty;
+    }
+    const label = [caliber || null, Number.isFinite(qty) ? `×${qty}` : null]
+      .filter(Boolean)
+      .join('');
+    if (label){
+      ammoSummaryParts.push(label);
+    }
+  }
+  const ammoCountValue = Number.isFinite(ammoCount) ? ammoCount : null;
+  const hasAmmoSummary = ammoSummaryParts.length > 0;
+
+  const includesLabel = firearmIncluded && ammoIncluded
+    ? '총기+탄약'
+    : (firearmIncluded ? '총기' : (ammoIncluded ? '탄약' : '기타'));
+
+  const summary = {
+    requestId: payload.requestId ?? payload.request_id ?? null,
+    action,
+    actionLabel: action === 'return' ? '불입' : (action === 'dispatch' ? '불출' : '장비'),
+    type: typeRaw || null,
+    includes: { firearm: firearmIncluded, ammo: ammoIncluded, label: includesLabel },
+    firearmCode,
+    ammoSummary: hasAmmoSummary ? ammoSummaryParts.join(', ') : null,
+    ammoCount: hasAmmoSummary ? ammoCountValue : null,
+    locker,
+    site: payload.site_id || payload.site || null,
+    purpose: payload.purpose || null,
+    location: payload.location || null
+  };
+
+  cleanObject(summary);
+  return Object.keys(summary).length ? summary : null;
+}
+
 
 function updateRobotScriptState(){
   try {
@@ -245,6 +376,9 @@ function sanitizeRobotJob(job, { includePayload = false } = {}){
     mode: job.mode || null,
     progress: job.progress || null
   };
+  if (job.summary) {
+    base.summary = job.summary;
+  }
   if (includePayload) {
     base.payload = job.payload;
   }
@@ -278,6 +412,7 @@ function forwardRobotEvent(job, update = {}){
       message: update.message || job?.message || null,
       progress: update.progress || job?.progress || null,
       mode: job?.mode || null,
+      summary: job?.summary || null,
       timestamp: timeNow(),
       meta: update.meta || null
     }
@@ -298,6 +433,14 @@ function finalizeRobotJob(job, status, info = {}){
     job.error = info.message;
   }
   if (info.error) job.error = info.error;
+  log('robot job finished', {
+    jobId: job.id,
+    status: job.status,
+    stage: job.stage,
+    message: job.message,
+    error: job.error || null,
+    summary: job.summary || null
+  });
   robotState.active = null;
   robotState.lastEventAt = job.finishedAt;
   recordRobotHistory(job);
@@ -324,6 +467,12 @@ function handleRobotStdout(job, line){
     job.mode = obj.mode || job.mode;
     job.progress = obj;
     robotState.lastEventAt = timeNow();
+    log('robot progress', {
+      jobId: job.id,
+      stage: job.stage,
+      message: job.message,
+      summary: job.summary || null
+    });
     forwardRobotEvent(job, {
       status: 'progress',
       stage: job.stage,
@@ -338,6 +487,13 @@ function handleRobotStdout(job, line){
     job.message = obj.message || job.message;
     job.mode = obj.mode || job.mode;
     job.result = obj;
+    log('robot complete', {
+      jobId: job.id,
+      status: obj.status,
+      stage: job.stage,
+      message: job.message,
+      summary: job.summary || null
+    });
     finalizeRobotJob(job, obj.status === 'success' ? 'succeeded' : 'failed', {
       stage: job.stage,
       message: job.message,
@@ -370,12 +526,14 @@ function startRobotJob(payload = {}){
   }
 
   const jobId = (++robotJobCounter);
+  const summary = summarizeRobotPayload(payload);
   const site = payload.site || payload.site_id || payload.dispatch?.site_id || FP_SITE;
   const job = {
     id: jobId,
     requestId: payload.requestId ?? payload.request_id ?? null,
     eventId: payload.eventId ?? payload.executionEventId ?? payload.execution_event_id ?? null,
     payload,
+    summary: summary || null,
     site,
     status: 'starting',
     stage: 'starting',
@@ -383,12 +541,32 @@ function startRobotJob(payload = {}){
     logs: []
   };
 
+    if (summary){
+    job.mode = job.mode || summary.action || job.mode;
+    if (!job.message){
+      const parts = [summary.actionLabel, summary.includes?.label].filter(Boolean);
+      job.message = parts.length ? `${parts.join(' ')} 준비` : '장비 명령 준비';
+    }
+  }
+
   const proc = spawn(robotState.python || PYTHON_BIN, [robotState.script]);
   job.process = proc;
   job.startedAt = timeNow();
   job.status = 'running';
   robotState.active = job;
   robotState.lastEventAt = job.startedAt;
+
+  log('robot job accepted', {
+    jobId,
+    requestId: job.requestId,
+    action: summary?.actionLabel || summary?.action || payload.mode || payload.type || 'unknown',
+    includes: summary?.includes || null,
+    firearm: summary?.firearmCode || null,
+    ammo: summary?.ammoSummary || null,
+    site: job.site,
+    python: robotState.python,
+    script: robotState.script
+  });
 
   forwardRobotEvent(job, { status: 'accepted', stage: job.stage, message: 'job accepted' });
 
