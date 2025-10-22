@@ -52,6 +52,19 @@ int parseIntField(const String &line, const char *key){
   while (i<(int)line.length() && isDigit(line[i])){ v=v*10+(line[i]-'0'); i++; got=true; }
   if (!got) return INT_MIN; return (int)(neg ? -v : v);
 }
+String parseStringField(const String &line, const char *key){
+  String k = String("\"") + key + "\"";
+  int p = line.indexOf(k); if (p < 0) return String();
+  int c = line.indexOf(':', p + k.length()); if (c < 0) return String();
+  int i = c + 1;
+  while (i < (int)line.length() && isspace(line[i])) i++;
+  if (i >= (int)line.length() || line[i] != '"') return String();
+  int start = ++i;
+  while (i < (int)line.length() && line[i] != '"') i++;
+  if (i >= (int)line.length()) return String();
+  return line.substring(start, i);
+}
+
 
 // ---------- Sensor helpers ----------
 uint8_t waitImage(uint32_t timeout_ms=8000){
@@ -116,6 +129,39 @@ bool doCount(){
   err("count_failed"); return false;
 }
 
+bool doLed(const String &modeRaw, const String &colorRaw, int speed, int cycles){
+  String mode = modeRaw; mode.trim(); mode.toLowerCase();
+  String color = colorRaw; color.trim(); color.toLowerCase();
+
+  uint8_t ledMode = FINGERPRINT_LED_ON;
+  String modeOut = "on";
+  if (mode.length() == 0) { ledMode = FINGERPRINT_LED_ON; modeOut = "on"; }
+  else if (mode == "off" || mode == "stop") { ledMode = FINGERPRINT_LED_OFF; modeOut = "off"; }
+  else if (mode == "flash" || mode == "flashing" || mode == "blink") { ledMode = FINGERPRINT_LED_FLASHING; modeOut = "flash"; }
+  else if (mode == "breathing" || mode == "breathe" || mode == "pulse") { ledMode = FINGERPRINT_LED_BREATHING; modeOut = "breathing"; }
+  else if (mode == "gradual" || mode == "gradual_on" || mode == "fade") { ledMode = FINGERPRINT_LED_GRADUAL_ON; modeOut = "gradual"; }
+  else { ledMode = FINGERPRINT_LED_ON; modeOut = mode.length() ? mode : "on"; }
+
+  uint8_t ledColor = FINGERPRINT_LED_COLOR_BLUE;
+  String colorOut = color.length() ? color : "blue";
+  if (color == "red") { ledColor = FINGERPRINT_LED_COLOR_RED; colorOut = "red"; }
+  else if (color == "purple" || color == "violet") { ledColor = FINGERPRINT_LED_COLOR_PURPLE; colorOut = "purple"; }
+  else if (color == "blue" || color == "cyan" || color == "teal") { ledColor = FINGERPRINT_LED_COLOR_BLUE; colorOut = "blue"; }
+  else if (color == "off") { ledColor = FINGERPRINT_LED_COLOR_BLUE; colorOut = "off"; }
+
+  uint8_t ledSpeed = (speed >= 0 && speed <= 255) ? (uint8_t)speed : 0;
+  uint8_t ledCycles = (cycles >= 0 && cycles <= 255) ? (uint8_t)cycles : 0;
+
+  bool okb = finger.LEDcontrol(ledMode, ledSpeed, ledColor, ledCycles);
+  if (okb){
+    ok("led", String("\"mode\":\"") + modeOut + "\",\"color\":\"" + colorOut + "\",\"speed\":" + (int)ledSpeed + ",\"cycles\":" + (int)ledCycles);
+    return true;
+  }
+  err("led_failed");
+  return false;
+}
+
+
 // ---------- open (baud autoscan 57600/9600) ----------
 bool tryAt(uint32_t br){
 #if FP_USE_HWSERIAL
@@ -162,6 +208,15 @@ void handleLine(const String &line){
 
   if (line.indexOf("\"clear\"")>=0){ doClear(); return; }
   if (line.indexOf("\"count\"")>=0){ doCount(); return; }
+  if (line.indexOf("\"led\"")>=0){
+    String mode = parseStringField(line, "mode");
+    if (!mode.length()) mode = parseStringField(line, "state");
+    String color = parseStringField(line, "color");
+    int speed = parseIntField(line, "speed"); if (speed == INT_MIN) speed = parseIntField(line, "brightness");
+    int cycles = parseIntField(line, "cycles");
+    doLed(mode, color, speed == INT_MIN ? -1 : speed, cycles == INT_MIN ? -1 : cycles);
+    return;
+  }
 
   err("unknown_cmd");
 }

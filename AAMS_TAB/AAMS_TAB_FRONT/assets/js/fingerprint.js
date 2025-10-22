@@ -1,13 +1,107 @@
 // assets/js/fingerprint.js
-import { mountMobileHeader, saveMe } from "./util.js";
+import { mountMobileHeader, saveMe, getFpLocalBase } from "./util.js";
 import { openFpEventSource } from "./api.js";
 
 const API_BASE = (window.AAMS_CONFIG && window.AAMS_CONFIG.API_BASE) || "";
 const SITE = window.FP_SITE || "site-01";
 const WAIT_AFTER_SUCCESS_MS = 3000;
 const SCAN_FEEDBACK_DELAY_MS = 420;
+const LOCAL_IDENTIFY_TIMEOUT_MS = 65000;
+const DEFAULT_LED_ON_COMMAND = { mode: "breathing", color: "blue", speed: 18 };
+const LED_OFF_COMMAND = { mode: "off" };
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function joinLocalUrl(base, path) {
+  const trimmed = (base || "").trim();
+  if (!trimmed) return path;
+  return trimmed.replace(/\/?$/, "") + path;
+}
+
+function createLocalIdentifySession({ timeoutMs = LOCAL_IDENTIFY_TIMEOUT_MS } = {}) {
+  const base = getFpLocalBase();
+  if (!base) return null;
+
+  const effectiveTimeout = Math.max(5000, Number(timeoutMs) || LOCAL_IDENTIFY_TIMEOUT_MS);
+  const payload = {
+    site: SITE,
+    timeoutMs: effectiveTimeout,
+    led: DEFAULT_LED_ON_COMMAND
+  };
+
+  const startUrl = joinLocalUrl(base, "/identify/start");
+  const stopUrl = joinLocalUrl(base, "/identify/stop");
+
+  let stopped = false;
+  const listeners = [];
+  const addListener = (type, handler, options) => {
+    window.addEventListener(type, handler, options);
+    listeners.push({ type, handler, options });
+  };
+  const cleanup = () => {
+    while (listeners.length) {
+      const { type, handler, options } = listeners.pop();
+      window.removeEventListener(type, handler, options);
+    }
+  };
+
+  const stop = async ({ reason = "manual", turnOffLed = true } = {}) => {
+    if (stopped) return;
+    stopped = true;
+    cleanup();
+    try {
+      const body = { site: SITE, reason };
+      if (turnOffLed) {
+        body.led = LED_OFF_COMMAND;
+      }
+      await fetch(stopUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }).catch(() => {});
+    } catch (err) {
+      console.warn("[AAMS][fp] 로컬 지문 세션 종료 실패", err);
+    }
+  };
+
+  const autoStop = () => { stop({ reason: "navigation", turnOffLed: true }); };
+  addListener("hashchange", autoStop);
+  addListener("beforeunload", autoStop);
+  addListener("pagehide", autoStop, { once: true });
+
+  const started = (async () => {
+    const res = await fetch(startUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (err) {
+      data = null;
+    }
+    if (!res.ok || (data && data.ok === false)) {
+      const message = data?.message || data?.error || `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+    return data;
+  })();
+
+  started.catch(() => stop({ reason: "start_failed", turnOffLed: true }));
+
+  return { stop, started };
+}
+
+async function stopLocalIdentifySession(session, { reason = "manual", turnOffLed = true } = {}) {
+  if (!session || typeof session.stop !== "function") return;
+  try {
+    await session.stop({ reason, turnOffLed });
+  } catch (error) {
+    console.warn("[AAMS][fp] 로컬 세션 정리 중 오류", error);
+  }
+}
+
 
 function formatDisplayName(me = {}, fallback = "사용자") {
   const rank = me?.rank ? String(me.rank).trim() : "";
@@ -222,6 +316,21 @@ export async function initFpUser() {
   await mountMobileHeader({ title: "사용자 지문 인증", pageType: "login", backTo: "#/" });
   const stage = createFingerprintStage({ fallbackName: "사용자" });
 
+  let localSession = createLocalIdentifySession();
+  if (localSession?.started) {
+    localSession.started.catch((err) => {
+      console.warn("[AAMS][fp] 사용자 지문 세션 시작 실패", err);
+      stage.showError("지문 센서를 준비할 수 없습니다. 연결 상태를 확인해 주세요.", { autoResetMs: 0 });
+    });
+  }
+
+  const stopLocal = async (reason) => {
+    if (!localSession) return;
+    const current = localSession;
+    localSession = null;
+    await stopLocalIdentifySession(current, { reason });
+  };
+
   let redirectTimer = null;
   const scheduleRedirect = (target) => {
     const next = target || "#/user";
@@ -232,8 +341,10 @@ export async function initFpUser() {
 
   const handleResolved = async (me, ctx) => {
     stage.setScanning();
+    const stopPromise = stopLocal("matched");
     await sleep(SCAN_FEEDBACK_DELAY_MS);
     stage.showSuccess(me);
+    await stopPromise;
     scheduleRedirect(ctx?.target || "#/user");
     return true;
   };
@@ -242,6 +353,7 @@ export async function initFpUser() {
 
   const claimResult = await claimOnce({ redirect: "#/user", autoRedirect: false, onResolved: handleResolved });
   if (claimResult.success) {
+    await stopLocal("claim-success");
     return;
   }
 
@@ -255,6 +367,22 @@ export async function initFpAdmin() {
   const mismatchMessage = loginId
     ? `현재 로그인한 관리자 계정(${loginId})과 지문이 일치하지 않습니다. 다시 시도해 주세요.`
     : "로그인한 관리자 계정과 지문이 일치하지 않습니다. 다시 시도해 주세요.";
+
+  let localSession = createLocalIdentifySession();
+  if (localSession?.started) {
+    localSession.started.catch((err) => {
+      console.warn("[AAMS][fp] 관리자 지문 세션 시작 실패", err);
+      stage.showError("지문 센서를 준비할 수 없습니다. 연결 상태를 확인해 주세요.", { autoResetMs: 0 });
+    });
+  }
+
+  const stopLocal = async (reason) => {
+    if (!localSession) return;
+    const current = localSession;
+    localSession = null;
+    await stopLocalIdentifySession(current, { reason });
+  };
+
 
 
   let redirectTimer = null;
@@ -272,14 +400,17 @@ export async function initFpAdmin() {
       return false;
     }
     stage.setScanning();
+    const stopPromise = stopLocal("matched");
     await sleep(SCAN_FEEDBACK_DELAY_MS);
     stage.showSuccess(me);
+    await stopPromise;
     scheduleRedirect(ctx?.target || "#/admin");
     return true;
   };
 
   const claimResult = await claimOnceAdmin({ autoRedirect: false, onResolved: handleResolved });
   if (claimResult.success) {
+    await stopLocal("claim-success");
     return;
   }
 

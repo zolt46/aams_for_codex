@@ -1,0 +1,225 @@
+import { getApiBase, getFpLocalBase } from "./util.js";
+
+const POLL_INTERVAL_MS = 30000;
+const INITIAL_TIMEOUT_MS = 4500;
+
+let monitorEl = null;
+let lastUpdatedEl = null;
+let pollTimer = null;
+let refreshing = false;
+let initialized = false;
+
+function resolveUrl(base, path) {
+  const cleanBase = (base || "").trim();
+  if (!cleanBase) return path;
+  return cleanBase.replace(/\/?$/, "") + path;
+}
+
+function ensureMonitorElement() {
+  if (monitorEl && monitorEl.dataset.bound === "1") {
+    if (!lastUpdatedEl || !lastUpdatedEl.isConnected) {
+      lastUpdatedEl = monitorEl.querySelector('[data-role="updated"]');
+    }
+    return monitorEl;
+  }
+
+  let el = document.getElementById("status-monitor");
+  if (!el) {
+    el = document.createElement("section");
+    el.id = "status-monitor";
+  }
+  el.classList.add("status-monitor");
+  el.dataset.bound = "1";
+  el.innerHTML = `
+    <div class="status-monitor-heading">연결 상태</div>
+    <div class="status-monitor-items">
+      ${createItemTemplate("render", "서버")}
+      ${createItemTemplate("db", "DB")}
+      ${createItemTemplate("local", "로컬")}
+    </div>
+    <div class="status-monitor-updated">업데이트: <span data-role="updated">—</span></div>
+  `;
+
+  monitorEl = el;
+  lastUpdatedEl = monitorEl.querySelector('[data-role="updated"]');
+  return monitorEl;
+}
+
+function createItemTemplate(key, label) {
+  return `
+    <div class="status-item" data-key="${key}" data-state="checking">
+      <div class="status-header">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-label">${label}</span>
+      </div>
+      <div class="status-value">확인중…</div>
+      <div class="status-detail" hidden></div>
+    </div>
+  `;
+}
+
+function placeMonitor() {
+  const el = ensureMonitorElement();
+  const top = document.getElementById("top");
+  if (top && top.parentNode) {
+    if (el.previousElementSibling !== top) {
+      top.insertAdjacentElement("afterend", el);
+    }
+  } else {
+    const host = document.querySelector(".auth-shell") || document.querySelector("main") || document.body;
+    if (!el.parentNode || el.parentNode !== host.parentNode) {
+      host.parentNode?.insertBefore?.(el, host) || document.body.prepend(el);
+    }
+  }
+  return el;
+}
+
+function setState(key, state, value, detail) {
+  const el = monitorEl?.querySelector?.(`.status-item[data-key="${key}"]`);
+  if (!el) return;
+  el.dataset.state = state;
+  const valueEl = el.querySelector(".status-value");
+  if (valueEl) valueEl.textContent = value;
+  const detailEl = el.querySelector(".status-detail");
+  if (detailEl) {
+    if (detail) {
+      detailEl.textContent = detail;
+      detailEl.hidden = false;
+    } else {
+      detailEl.textContent = "";
+      detailEl.hidden = true;
+    }
+  }
+}
+
+function markChecking() {
+  setState("render", "checking", "확인중…", "");
+  setState("db", "checking", "확인중…", "");
+  setState("local", "checking", "확인중…", "");
+}
+
+function formatTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString("ko-KR", { hour12: false });
+  } catch (e) {
+    return "—";
+  }
+}
+
+async function fetchJson(url, { timeoutMs = INITIAL_TIMEOUT_MS } = {}) {
+  if (!url) return { ok: false, skipped: true };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, headers: { "Accept": "application/json" } });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    return { ok: res.ok, status: res.status, data };
+  } catch (error) {
+    return { ok: false, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function describeError(err) {
+  if (!err) return "응답 없음";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message || "에러";
+  if (err && typeof err === "object" && err.message) return String(err.message);
+  return "연결 오류";
+}
+
+export async function refreshStatusMonitor() {
+  ensureMonitorElement();
+  placeMonitor();
+  if (refreshing) return;
+  refreshing = true;
+  if (!initialized) {
+    markChecking();
+  }
+
+  try {
+    const apiBase = getApiBase();
+    const localBase = getFpLocalBase();
+    const [http, db, local] = await Promise.all([
+      fetchJson(resolveUrl(apiBase, "/health")),
+      fetchJson(resolveUrl(apiBase, "/health/db"), { timeoutMs: 5200 }),
+      fetchJson(resolveUrl(localBase, "/health"))
+    ]);
+
+    const now = Date.now();
+
+    const httpOk = !!(http.ok && http.data && (http.data.ok === true || http.data.status === "ok"));
+    const httpState = httpOk ? "online" : (http.ok ? "degraded" : "offline");
+    const httpLabel = httpState === "online" ? "정상" : (httpState === "degraded" ? "주의" : "끊김");
+    const httpDetail = httpOk ? `응답 ${http.status || 200}` : describeError(http.error) || `HTTP ${http.status || 0}`;
+    setState("render", httpState, httpLabel, httpDetail);
+
+    const dbOk = !!(db.ok && db.data && (db.data.db || db.data.ok || db.data.firearms_total !== undefined));
+    let dbDetail = "";
+    if (dbOk) {
+      const firearms = db.data?.firearms_total;
+      const ammo = db.data?.ammo_total;
+      if (firearms !== undefined || ammo !== undefined) {
+        dbDetail = `총기 ${firearms ?? "-"} · 탄약 ${ammo ?? "-"}`;
+      } else {
+        dbDetail = "연결됨";
+      }
+    } else {
+      dbDetail = describeError(db.error) || `HTTP ${db.status || 0}`;
+    }
+    setState("db", dbOk ? "online" : (db.ok ? "degraded" : "offline"), dbOk ? "정상" : "오류", dbDetail);
+
+    const localOk = !!(local.ok && local.data && local.data.ok !== false);
+    let localState = localOk ? "online" : "offline";
+    let localValue = localOk ? "대기 중" : "끊김";
+    let localDetail = localOk ? "센서 상태 미확인" : describeError(local.error);
+    if (localOk) {
+      const serialConnected = !!local.data?.serial?.connected;
+      const manualActive = !!local.data?.identify?.manual?.active;
+      const running = !!local.data?.identify?.running;
+      const sessionInfo = local.data?.identify?.manual;
+      const path = local.data?.serial?.path;
+      if (!serialConnected) {
+        localState = "degraded";
+        localValue = "센서 미연결";
+        localDetail = "센서를 찾을 수 없습니다.";
+      } else if (manualActive || running) {
+        localState = "online";
+        localValue = "스캔 중";
+        if (sessionInfo?.deadline) {
+          const remainMs = Math.max(0, sessionInfo.deadline - now);
+          const remainSec = Math.round(remainMs / 1000);
+          localDetail = `지문 대기 중 (${remainSec}s)`;
+        } else {
+          localDetail = "지문 대기 중";
+        }
+      } else {
+        localState = "online";
+        localValue = "대기 중";
+        localDetail = path ? `센서 연결됨 (${path})` : "센서 연결됨";
+      }
+    }
+    setState("local", localState, localValue, localDetail);
+
+    if (lastUpdatedEl) {
+      lastUpdatedEl.textContent = formatTime(now);
+    }
+    initialized = true;
+  } catch (error) {
+    console.warn("[AAMS][status] 상태 갱신 실패", error);
+  } finally {
+    refreshing = false;
+  }
+}
+
+export function mountStatusMonitor(options = {}) {
+  placeMonitor();
+  if (!pollTimer) {
+    refreshStatusMonitor();
+    pollTimer = setInterval(() => { refreshStatusMonitor(); }, POLL_INTERVAL_MS);
+  } else if (options.immediate !== false) {
+    refreshStatusMonitor();
+  }
+}
