@@ -116,6 +116,210 @@
 .auth-card.list-card {
   width: min(520px, 100%);
 }
+.fp-card {
+  width: min(520px, 100%);
+  text-align: center;
+  gap: clamp(20px, 3vw, 28px);
+}
+
+.fp-stage {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 3vw, 26px);
+  margin: 6px 0 4px;
+}
+
+.fp-visual {
+  position: relative;
+  width: clamp(200px, 32vw, 240px);
+  height: clamp(200px, 32vw, 240px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-sensor {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 34px;
+  background: linear-gradient(150deg, rgba(44, 60, 51, 0.95), rgba(19, 27, 23, 0.96));
+  border: 1px solid rgba(120, 172, 144, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 28px 40px rgba(0, 0, 0, 0.52);
+  overflow: hidden;
+}
+
+.fp-sensor-border,
+.fp-sensor-pattern,
+.fp-sensor-glow,
+.fp-sensor-scan {
+  position: absolute;
+  inset: clamp(14px, 3.2vw, 22px);
+  border-radius: 26px;
+  pointer-events: none;
+}
+
+.fp-sensor-border {
+  border: 1px solid rgba(156, 222, 188, 0.55);
+  box-shadow: 0 0 18px rgba(156, 222, 188, 0.42);
+  opacity: 0.45;
+}
+
+.fp-sensor-pattern {
+  background:
+    radial-gradient(ellipse at center, rgba(156, 222, 188, 0.18) 0%, rgba(156, 222, 188, 0.05) 58%, transparent 74%),
+    repeating-radial-gradient(circle at center, rgba(156, 222, 188, 0.32) 0px, rgba(156, 222, 188, 0.32) 3px, transparent 3px, transparent 9px);
+  mix-blend-mode: screen;
+  opacity: 0.34;
+}
+
+.fp-sensor-glow {
+  inset: clamp(10px, 2.6vw, 18px);
+  border-radius: 24px;
+  background: radial-gradient(circle at 50% 40%, rgba(126, 214, 172, 0.42), rgba(126, 214, 172, 0));
+  filter: blur(0.6px);
+  opacity: 0.32;
+  animation: fpPulse 2.8s ease-in-out infinite;
+}
+
+.fp-sensor-scan {
+  background: linear-gradient(180deg, rgba(122, 228, 182, 0) 0%, rgba(122, 228, 182, 0.55) 45%, rgba(122, 228, 182, 0) 100%);
+  opacity: 0;
+  transform: translateY(-110%);
+}
+
+.fp-stage[data-state="waiting"] .fp-sensor-scan,
+.fp-stage[data-state="scanning"] .fp-sensor-scan {
+  opacity: 0.7;
+  animation: fpScan 2.6s linear infinite;
+}
+
+.fp-stage[data-state="success"] .fp-sensor-scan,
+.fp-stage[data-state="error"] .fp-sensor-scan {
+  opacity: 0;
+  animation: none;
+}
+
+.fp-stage[data-state="success"] .fp-sensor {
+  border-color: rgba(120, 224, 178, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.58), 0 32px 46px rgba(0, 0, 0, 0.58), 0 0 34px rgba(120, 224, 178, 0.42);
+}
+
+.fp-stage[data-state="success"] .fp-sensor-glow {
+  animation: fpSuccessGlow 1.1s ease-out forwards;
+  opacity: 0.55;
+  background: radial-gradient(circle at 50% 40%, rgba(126, 214, 172, 0.55), rgba(126, 214, 172, 0));
+}
+
+.fp-stage[data-state="error"] .fp-sensor {
+  border-color: rgba(242, 132, 132, 0.68);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 26px 42px rgba(0, 0, 0, 0.55), 0 0 28px rgba(242, 132, 132, 0.32);
+}
+
+.fp-stage[data-state="error"] .fp-sensor-glow {
+  animation: none;
+  opacity: 0.46;
+  background: radial-gradient(circle at 50% 40%, rgba(242, 132, 132, 0.5), rgba(242, 132, 132, 0));
+}
+
+.fp-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 3.4em;
+}
+
+.fp-status-line {
+  display: none;
+  margin: 0;
+  line-height: 1.6;
+  font-size: clamp(1rem, 2.6vw, 1.15rem);
+  color: #dfeae4;
+}
+
+.fp-status-line[data-for~="scanning"] {
+  color: rgba(223, 234, 228, 0.82);
+}
+
+.fp-status-line[data-for~="success"] {
+  color: #e9f7f0;
+  font-weight: 600;
+}
+
+.fp-status-line[data-for~="error"] {
+  color: #ffbcbc;
+  font-weight: 600;
+}
+
+.fp-stage[data-state="waiting"] .fp-status-line[data-for~="waiting"],
+.fp-stage[data-state="scanning"] .fp-status-line[data-for~="scanning"],
+.fp-stage[data-state="success"] .fp-status-line[data-for~="success"],
+.fp-stage[data-state="error"] .fp-status-line[data-for~="error"] {
+  display: block;
+}
+
+.fp-name {
+  color: #84f2c6;
+}
+
+.fp-profile {
+  display: grid;
+  gap: 6px;
+  padding: 16px 22px;
+  border-radius: 18px;
+  background: rgba(32, 44, 37, 0.88);
+  border: 1px solid rgba(118, 168, 142, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  min-width: clamp(220px, 54vw, 320px);
+  text-align: center;
+}
+
+.fp-profile p {
+  margin: 0;
+}
+
+.fp-profile-name {
+  color: #e7f6ed;
+  font-size: clamp(1rem, 2.8vw, 1.2rem);
+  font-weight: 600;
+}
+
+.fp-profile-sub {
+  color: rgba(213, 230, 222, 0.78);
+  font-size: clamp(0.85rem, 2.4vw, 0.96rem);
+}
+
+.fp-profile-sub:empty {
+  display: none;
+}
+
+@keyframes fpPulse {
+  0% { opacity: 0.25; transform: scale(0.96); }
+  50% { opacity: 0.65; transform: scale(1); }
+  100% { opacity: 0.25; transform: scale(0.96); }
+}
+
+@keyframes fpScan {
+  0% { transform: translateY(-110%); }
+  45% { transform: translateY(0%); }
+  55% { transform: translateY(0%); }
+  100% { transform: translateY(110%); }
+}
+
+@keyframes fpSuccessGlow {
+  0% { opacity: 0.35; }
+  60% { opacity: 0.7; }
+  100% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-sensor-glow,
+  .fp-sensor-scan {
+    animation: none !important;
+  }
+}
 
 .auth-card.form-card .primary {
   margin-top: 8px;
@@ -274,6 +478,21 @@
 
   .entry-screen {
     gap: 24px;
+  }
+
+  .fp-card {
+    width: 100%;
+    gap: 22px;
+  }
+
+  .fp-visual {
+    width: clamp(160px, 52vw, 200px);
+    height: clamp(160px, 52vw, 200px);
+  }
+
+  .fp-profile {
+    min-width: 0;
+    width: 100%;
   }
 
 
