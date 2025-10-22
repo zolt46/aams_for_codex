@@ -1,0 +1,105 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AAMS - 신청하기</title>
+<link rel="stylesheet" href="assets/css/aams.css"/>
+<link rel="stylesheet" href="assets/css/workcenter.css"/>
+<link rel="stylesheet" href="assets/css/toast.css"/>
+</head><body>
+<main class="main-content">
+  <!-- 통합본처럼 넓게 + 표 촘촘 + 줄바꿈 허용 -->
+  <div class="page-container xwide dense-table wrap-table">
+    <h2 class="section-title">🧾 신청하기</h2>
+
+    <!-- ✅ 가로 2열 래퍼 -->
+    <div class="apply-two-col">
+      <!-- 왼쪽: 신청정보 카드 -->
+      <div class="card">
+        <div class="section-head">
+          <div class="dot">i</div>
+          <h3 style="margin:0">신청 정보</h3>
+        </div>
+
+        <div class="fieldset">
+          <div class="field-row">
+            <div>
+              <label class="label required">신청 유형</label>
+              <select id="request_type">
+                <option value="DISPATCH">불출</option>
+                <option value="RETURN">불입(반납)</option>
+              </select>
+              <div class="hint">불출은 <b>불입</b> 상태 총기만, 불입은 <b>불출</b> 상태 총기만 신청</div>
+            </div>
+            <div>
+              <label class="label required">예정 일시</label>
+              <input type="datetime-local" id="scheduled_at"/>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div>
+              <label class="label required">목적</label>
+              <select id="purpose">
+                <option value="">선택</option><option>훈련</option><option>근무</option><option>사격</option><option>정비</option><option>기타</option>
+              </select>
+            </div>
+            <div>
+              <label class="label required">장소</label>
+              <input id="location" type="text" placeholder="사격장 / 경계근무지 / 무기고 등"/>
+            </div>
+          </div>
+
+          <div>
+            <label class="label">비고</label>
+            <textarea id="notes" rows="3" placeholder="특이사항(선택)"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- 오른쪽: 항목 추가 카드 -->
+      <div class="card">
+        <div class="section-head">
+          <div class="dot">+</div>
+          <h3 style="margin:0">항목 추가</h3>
+        </div>
+
+        <div class="toolbar">
+          <select id="item_type">
+            <option value="FIREARM">총기</option>
+            <option value="AMMO">탄약</option>
+          </select>
+
+          <div class="typeahead-wrap">
+            <input id="item_search" placeholder="총기 번호 / 탄약명 검색(부분 입력)"/>
+            <div id="taList" class="typeahead-list" style="display:none"></div>
+          </div>
+
+          <input id="ammo_qty" type="number" min="1" placeholder="탄약 수량(탄약 시)"/>
+          <button id="addItemBtn">추가</button>
+        </div>
+
+        <div class="table-container-scroll">
+          <table class="modern-table" id="itemsTable">
+            <thead>
+              <tr><th>종류</th><th>식별</th><th>수량</th><th class="actions">관리</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="toolbar" style="justify-content:flex-end">
+          <button id="submitBtn">신청 제출</button>
+        </div>
+        <div class="muted">* 총기는 1:1, 탄약은 수량 기반. 총기/탄약을 섞어서 여러 개 추가 가능.</div>
+      </div>
+    </div>
+    <!-- /apply-two-col -->
+  </div>
+</main>
+
+
+<script type="module">
+  import { bootHeader } from './assets/js/header.js';
+  import './assets/js/page_work_apply.js';
+  await bootHeader();
+</script>
+</body></html>

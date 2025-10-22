@@ -1,0 +1,32 @@
+<header class="main-header">
+  <div class="header-container">
+    <!-- 로고: 링크는 auth.js가 역할별로 동적으로 바꿔줍니다 -->
+    <a href="main_page_new_test.html" class="logo-container" id="logoLink">
+      <img src="assets/logo/logo.png" alt="AAMS 로고" class="logo-image"/>
+      <span>AAMS</span>
+    </a>
+
+    <div class="flex-spacer"></div>
+
+    <div class="welcome-info">
+      <div class="welcome-text">
+        <span class="welcome-badge">환영합니다, <b id="who">사용자</b><small>님</small></span>
+      </div>
+
+      <div class="status-wrap">
+        <span id="status-pill" class="status-pill" data-state="checking">
+          <span class="dot"></span><span class="label">상태 확인중…</span>
+        </span>
+        <div class="status-extra">
+          <div class="row"><span>서버</span><strong id="h-http" class="muted">—</strong></div>
+          <div class="row"><span>DB</span><strong id="h-db" class="muted">—</strong></div>
+          <div class="row"><span>지연</span><strong id="h-latency" class="muted">—</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-spacer"></div>
+
+    <a href="index.html" class="logout-button" id="logoutBtn">로그아웃</a>
+  </div>
+</header>

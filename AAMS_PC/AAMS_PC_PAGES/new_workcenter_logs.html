@@ -1,0 +1,36 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AAMS - 전체 로그</title>
+<link rel="stylesheet" href="assets/css/aams.css"/>
+<link rel="stylesheet" href="assets/css/workcenter.css"/>
+<link rel="stylesheet" href="assets/css/toast.css"/>
+</head><body>
+<main class="main-content">
+  <div class="page-container xwide dense-table wrap-table">
+    <h2 class="section-title">📜 전체 로그</h2>
+
+    <div class="page-container xwide dense-table wrap-table">
+      <div class="toolbar">
+        <select id="etype"><option value="">전체</option><option>DISPATCH</option><option>RETURN</option></select>
+        <input type="date" id="fromD"/><span>~</span><input type="date" id="toD"/>
+        <button id="reload">조회</button>
+        <div class="right" style="flex:1"></div>
+        <button id="csv">CSV 내보내기</button>
+      </div>
+
+      <div class="table-container-scroll">
+        <table class="modern-table" id="logT">
+          <thead><tr><th>시간</th><th>유형</th><th>집행자</th><th>총기 변경</th><th>탄약 이동</th><th>비고</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { bootHeader } from './assets/js/header.js';
+  import './assets/js/page_work_logs.js';
+  await bootHeader();
+</script>
+</body></html>

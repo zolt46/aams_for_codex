@@ -1,0 +1,9 @@
+.aams-modal[hidden]{display:none}
+.aams-modal{position:fixed;inset:0;z-index:9998}
+.aams-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+.aams-modal-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(860px,92vw);max-height:86vh;overflow:auto;background:var(--sidebar-bg);border:1px solid var(--border-color);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.aams-modal-head,.aams-modal-foot{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-color)}
+.aams-modal-foot{border-top:1px solid var(--border-color);border-bottom:none}
+.aams-modal-body{padding:18px}
+.aams-modal-close{background:transparent;border:none;color:var(--text-color);font-size:20px;cursor:pointer}
+.aams-modal-foot .primary{background:var(--active-menu-item);border:none;color:#fff;padding:10px 16px;border-radius:10px;cursor:pointer}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>인원 현황 - AAMS</title>
+  <link rel="stylesheet" href="assets/css/aams.css"/>
+  <link rel="stylesheet" href="assets/css/toast.css"/>
+  <style>
+    /* 상태 배지(허용/허용 안함) – 통합본 톤 */
+    .status-badge{display:inline-block;padding:5px 10px;border-radius:12px;font-size:.8em;font-weight:700}
+    .status-allow{background:#27AE60;color:#fff}
+    .status-deny{background:#E67E22;color:#fff}
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="page-container xwide dense-table wrap-table">
+      <h2 class="section-title">🧑‍🤝‍🧑 인원 현황</h2>
+
+      <!-- 요약: 총/허용/미허용 -->
+      <div class="dashboard-summary">
+        <div class="summary-item"><span class="value" id="total-personnel-count">0</span><span class="label">총 인원 수</span></div>
+        <div class="summary-item"><span class="value" id="admin-allowed-count">0</span><span class="label">총 관리자 허용</span></div>
+        <div class="summary-item"><span class="value" id="admin-not-allowed-count">0</span><span class="label">총 관리자 미허용</span></div>
+      </div>
+
+      <!-- 검색/필터 -->
+      <div class="controls">
+        <input id="search-input" placeholder="이름/군번/소속/직책/아이디/연락처/비고 검색…" style="flex:1"/>
+        <select id="unit-filter"><option value="">-- 소속 --</option></select>
+        <select id="admin-filter"><option value="">-- 관리자 --</option><option value="Y">허용</option><option value="N">허용 안함</option></select>
+        <button id="search-button">검색</button>
+      </div>
+
+      <!-- CRUD 툴바 (JS가 버튼 활성/선택개수 관리) -->
+      <div class="controls" id="crud-controls">
+        <button id="btn-add">추가</button>
+        <button id="btn-edit">수정</button>
+        <button id="btn-save">저장</button>
+        <button id="btn-cancel">취소</button>
+        <button id="btn-del">삭제</button>
+        <span id="selected-count" style="margin-left:8px;opacity:.85">선택: 0</span>
+      </div>
+
+      <!-- 표 -->
+      <div class="table-container-scroll">
+        <table class="modern-table" id="person-table">
+          <thead>
+            <tr>
+              <!-- 선택 체크박스 헤더는 JS가 주입 -->
+              <th data-column-index="0">이름<span class="sort-icon"></span></th>
+              <th data-column-index="1">계급<span class="sort-icon"></span></th>
+              <th data-column-index="2">군번<span class="sort-icon"></span></th>
+              <th data-column-index="3">소속<span class="sort-icon"></span></th>
+              <th data-column-index="4">직책<span class="sort-icon"></span></th>
+              <th data-column-index="5">아이디<span class="sort-icon"></span></th>
+              <th data-column-index="6">비밀번호<span class="sort-icon"></span></th>
+              <th data-column-index="7">관리자 허용 여부<span class="sort-icon"></span></th>
+              <th data-column-index="8">연락처<span class="sort-icon"></span></th>
+              <th data-column-index="9">최근 변동일<span class="sort-icon"></span></th>
+              <th data-column-index="10">비고<span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="person-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { bootHeader } from './assets/js/header.js';
+    import './assets/js/page_person_full.js';
+    await bootHeader();
+  </script>
+</body>
+</html>

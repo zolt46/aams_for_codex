@@ -1,0 +1,59 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AAMS - 승인함(관리자)</title>
+<link rel="stylesheet" href="assets/css/aams.css"/>
+<link rel="stylesheet" href="assets/css/workcenter.css"/>
+<link rel="stylesheet" href="assets/css/toast.css"/>
+</head><body>
+<main class="main-content">
+  <div class="page-container xwide dense-table wrap-table">
+    <h2 class="section-title">✅ 승인함</h2>
+
+    <div class="page-container xwide dense-table wrap-table">
+      <div class="toolbar">
+        <select id="fStatus">
+          <option value="SUBMITTED">대기(제출)</option>
+          <option value="APPROVED">승인됨</option>
+          <option value="REJECTED">거부됨</option>
+          <option value="EXECUTED">집행됨</option>
+          <option value="CANCELLED">취소됨</option>
+          <option value="">전체</option>
+        </select>
+        <select id="fType">
+          <option value="">전체 유형</option>
+          <option value="DISPATCH">불출</option>
+          <option value="RETURN">불입</option>
+        </select>
+        <input type="date" id="from"/><input type="date" id="to"/>
+        <input type="search" id="q" placeholder="신청자/목적/장소/메모 검색"/>
+        <button id="reload">조회</button>
+
+        <div class="right" style="flex:1"></div>
+        <button id="bulkApprove" disabled>선택 승인</button>
+        <button id="bulkReject" disabled>선택 거부</button>
+        <!-- 집행 제거: 승인함에서는 승인/거부/상세만 -->
+        <button id="exportCsv">CSV</button>
+      </div>
+
+      <div class="table-container-scroll">
+        <table class="modern-table" id="t">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="checkAll"/></th>
+              <th>ID</th><th>유형</th><th>신청자</th><th>예정</th><th>진행</th><th>결정</th><th>항목 요약</th><th>목적/장소</th><th class="actions">승인/거부/상세</th>
+            </tr>
+          </thead><tbody></tbody>
+        </table>
+      </div>
+
+      <div class="muted">* 행을 펼치면 전체 신청 정보/항목/승인·거부 이력/집행 로그가 표시됩니다.</div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { bootHeader } from './assets/js/header.js';
+  import './assets/js/page_work_approvals.js';
+  await bootHeader();
+</script>
+</body></html>

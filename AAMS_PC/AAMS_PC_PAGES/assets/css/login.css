@@ -1,0 +1,51 @@
+/* 로그인 전용 스타일: 예전 통합 index_test.html 디자인을 분리 반영 */
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{
+  --body-bg:#1F2B24;
+  --input-bg:#2F3B33;
+  --text-color:#E6E6E6;
+  --button-color:#4C9A2A;
+  --button-hover-color:#6FBF4B;
+  --border-color:#4A5C50;
+}
+body{
+  background-color:var(--body-bg);
+  color:var(--text-color);
+}
+.login-wrap{
+  min-height:100vh;
+  display:flex; align-items:center; justify-content:center;
+  padding:24px;
+}
+.login-card{
+  width:100%; max-width:440px;
+  background:var(--body-bg);
+  border:1px solid var(--border-color);
+  border-radius:12px;
+  box-shadow:0 6px 16px rgba(0,0,0,.35);
+  padding:26px;
+}
+.brand{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:18px; text-align:center; }
+.brand .logo{ width:240px; height:240px; object-fit:contain; }
+.brand h1{ margin:0; font-size:1.8rem; color:var(--text-color); }
+.brand p{ margin:0; opacity:.85; }
+
+#login-form{ display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+#login-form input{
+  background:var(--input-bg);
+  border:1px solid var(--border-color);
+  color:var(--text-color);
+  padding:12px;
+  border-radius:10px;
+  font-size:1rem;
+}
+.login-button{
+  background:var(--button-color);
+  color:#fff; border:none;
+  border-radius:10px; padding:12px;
+  font-weight:700; cursor:pointer;
+  transition:background-color .2s, transform .1s;
+}
+.login-button:hover{ background:var(--button-hover-color); transform:translateY(-2px); }
+.login-button:active{ transform:translateY(0); }
+.msg{ min-height:22px; color:#ff6b6b; margin-top:6px; font-size:.92rem; }

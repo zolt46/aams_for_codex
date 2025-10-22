@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>총기 현황 - AAMS</title>
+  <link rel="stylesheet" href="assets/css/aams.css"/>
+  <link rel="stylesheet" href="assets/css/toast.css"/>
+</head>
+<body>
+  <main class="main-content">
+    <div class="page-container xwide dense-table wrap-table">
+      <h2 class="section-title">🔫 총기 현황</h2>
+
+      <!-- 상단 요약 -->
+      <div class="dashboard-summary">
+        <div class="summary-item"><span class="value" id="total-firearms-count">0</span><span class="label">총 총기 재원</span></div>
+        <div class="summary-item"><span class="value" id="dispatch-count">0</span><span class="label">현재 불출 중</span></div>
+        <div class="summary-item"><span class="value" id="returned-count">0</span><span class="label">현재 불입</span></div>
+      </div>
+
+      <!-- 검색/필터 -->
+      <div class="controls">
+        <input id="search-input" placeholder="소유자/군번/부대/총기번호/보관함/비고 검색..." style="flex:1"/>
+        <select id="status-filter">
+          <option value="">-- 상태별 필터 --</option>
+          <option value="불출">불출</option>
+          <option value="불입">불입</option>
+        </select>
+        <button id="search-button">검색</button>
+      </div>
+
+      <!-- CRUD 툴바 -->
+      <div class="controls" id="crud-controls">
+        <button id="btn-add">추가</button>
+        <button id="btn-edit">수정</button>
+        <button id="btn-save">저장</button>
+        <button id="btn-cancel">취소</button>
+        <button id="btn-del">삭제</button>
+        <span id="selected-count" style="margin-left:8px;opacity:.85">선택: 0</span>
+      </div>
+
+      <!-- 표 -->
+      <div class="table-container-scroll">
+        <table class="modern-table" id="firearm-table">
+          <thead>
+          <tr>
+            <!-- 체크박스 헤더는 JS에서 주입 -->
+            <th data-column-index="0">소유자<span class="sort-icon"></span></th>
+            <th data-column-index="1">계급<span class="sort-icon"></span></th>
+            <th data-column-index="2">군번<span class="sort-icon"></span></th>
+            <th data-column-index="3">부대<span class="sort-icon"></span></th>
+            <th data-column-index="4">보직<span class="sort-icon"></span></th>
+            <th data-column-index="5">총기 종류<span class="sort-icon"></span></th>
+            <th data-column-index="6">총기 번호<span class="sort-icon"></span></th>
+            <th data-column-index="7">보관함<span class="sort-icon"></span></th>
+            <th data-column-index="8">상태<span class="sort-icon"></span></th>
+            <th data-column-index="9">최근 변동<span class="sort-icon"></span></th>
+            <th data-column-index="10">비고<span class="sort-icon"></span></th>
+          </tr>
+          </thead>
+          <tbody id="firearms-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { bootHeader } from './assets/js/header.js';
+    import './assets/js/page_firearm_full.js';
+    await bootHeader();
+  </script>
+</body>
+</html>

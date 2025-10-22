@@ -1,0 +1,89 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AAMS 대시보드(사용자)</title>
+<link rel="stylesheet" href="assets/css/aams.css"/>
+<link rel="stylesheet" href="assets/css/modal.css"/>
+<link rel="stylesheet" href="assets/css/toast.css"/>
+</head><body>
+<main class="main-content">
+  <!-- 대시보드 요약만 표시 -->
+  <section class="page-container wide">
+    <h2 class="section-title">대시보드 요약</h2>
+  <div class="page-container wide">
+    <!-- 요약 그리드 (정돈 버전) -->
+    <div class="dashboard-summary tidy" style="margin-top:4px">
+      <div class="summary-item mini" style="grid-column:1/-1">
+        <div class="summary-head">
+          <div class="label">내 신청 현황</div>
+        </div>
+    <div class="chips dense" id="reqChips" style="margin-top:6px">
+            <div class="chip">제출 <span class="n" id="nSubmitted">-</span></div>
+            <div class="chip">승인됨 <span class="n" id="nApproved">-</span></div>
+            <div class="chip">거부됨 <span class="n" id="nRejected">-</span></div>
+            <div class="chip">집행됨 <span class="n" id="nExecuted">-</span></div>
+            <div class="chip">취소됨 <span class="n" id="nCancelled">-</span></div>
+           </div>        </div>
+     <!-- B. 신청 퀵 (좌) -->
+     <div class="summary-item mini" id="quickApplyCard">
+       <div class="summary-head"><div class="label">⚡ 신청 퀵</div></div>
+       <div class="quick-grid">
+         <button id="qaDispatch" class="btn ghost w100 sm">불출 신청</button>
+         <button id="qaReturn"   class="btn ghost w100 sm">불입(반납) 신청</button>
+         <button id="qaDuty"       class="btn ghost w100 sm">근무/경계 + 불출</button>
+         <button id="qaDutyReturn" class="btn ghost w100 sm">근무/경계 + 불입</button>
+       </div>
+       <div class="muted small" style="margin-top:6px">원클릭으로 신청 페이지로 이동합니다.</div>
+     </div>
+     <!-- C. 신청 프리뷰 (우) -->
+     <div class="summary-item mini">
+       <div class="summary-head"><div class="label">🧾 신청 프리뷰</div><a class="muted small" href="new_workcenter_my_history.html">전체 보기 →</a></div>
+       <ul id="reqPreviewList" class="preview-list"><!-- JS: 최대 3건 카드 --></ul>
+     </div>
+     <!-- D. 내 정보 (아래 좌) -->
+     <div class="summary-item mini" id="meCard">
+       <div class="summary-head"><div class="label">👤 내 정보</div></div>
+       <div class="kv">
+         <div class="kv-row"><span>계급/성명</span><strong id="meName">-</strong></div>
+         <div class="kv-row"><span>소속</span><strong id="meUnit">-</strong></div>
+         <div class="kv-row"><span>직책</span><strong id="meRole">-</strong></div>
+         <div class="kv-row"><span>식별</span><strong id="meUserId">-</strong></div>
+       </div>
+     </div>
+
+     <!-- E. 내 총기 (아래 우) -->
+     <div class="summary-item mini">
+       <div class="summary-head"><div class="label">🔫 내 총기</div><div class="pill" id="gunsCount">-</div></div>
+       <div class="muted" id="gunsStatus">-</div>
+       <ul id="gunsList" class="bullets"></ul>
+     </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 신청/이력 섹션 (대시보드 밖) -->
+  <section class="menu-section">
+    <h3 class="menu-section-title">신청 및 승인</h3>
+    <div class="menu-grid">
+      <a href="new_workcenter_apply.html" class="menu-item">
+        <div class="icon">🧾</div>
+        <div class="menu-title">신청하기</div>
+        <div class="menu-description">총기/탄약 불출·불입 신청</div>
+      </a>
+      <a href="new_workcenter_my_history.html" class="menu-item">
+        <div class="icon">🕓</div>
+        <div class="menu-title">내 이력</div>
+        <div class="menu-description">내 신청 처리 현황</div>
+      </a>
+    </div>
+  </section>
+
+
+</main>
+
+<script type="module">
+  import { bootHeader } from './assets/js/header.js';
+  import { injectModal } from './assets/js/modal.js';
+  import './assets/js/page_main_user.js';
+  await bootHeader(); await injectModal();
+</script>
+</body></html>

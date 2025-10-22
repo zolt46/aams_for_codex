@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>탄약 현황 - AAMS</title>
+  <link rel="stylesheet" href="assets/css/aams.css"/>
+  <link rel="stylesheet" href="assets/css/toast.css"/>
+</head>
+<body>
+  <main class="main-content">
+    <div class="page-container xwide dense-table wrap-table">
+      <h2 class="section-title">📦 탄약 현황</h2>
+
+      <!-- 상단 요약 -->
+      <div class="dashboard-summary">
+        <div class="summary-item"><span class="value" id="total-ammo-count">0</span><span class="label">총 품목 수</span></div>
+        <div class="summary-item"><span class="value" id="category-count">0</span><span class="label">카테고리 수</span></div>
+        <div class="summary-item"><span class="value" id="dispatching-count">0</span><span class="label">불출 중</span></div>
+      </div>
+
+      <!-- 검색/필터 -->
+      <div class="controls">
+        <input id="search-input" placeholder="품명/카테고리/규격/보관함/비고 검색..." style="flex:1"/>
+        <select id="category-filter"><option value="">-- 카테고리 --</option></select>
+        <button id="search-button">검색</button>
+      </div>
+
+      <!-- CRUD 툴바 -->
+      <div class="controls" id="crud-controls">
+        <button id="btn-add">추가</button>
+        <button id="btn-edit">수정</button>
+        <button id="btn-save">저장</button>
+        <button id="btn-cancel">취소</button>
+        <button id="btn-del">삭제</button>
+        <span id="selected-count" style="margin-left:8px;opacity:.85">선택: 0</span>
+      </div>
+
+      <!-- 표 -->
+      <div class="table-container-scroll">
+        <table class="modern-table" id="ammo-table">
+          <thead>
+          <tr>
+            <!-- 체크박스 헤더는 JS에서 주입 -->
+            <th data-column-index="0">품명<span class="sort-icon"></span></th>
+            <th data-column-index="1">카테고리<span class="sort-icon"></span></th>
+            <th data-column-index="2">규격<span class="sort-icon"></span></th>
+            <th data-column-index="3">재고<span class="sort-icon"></span></th>
+            <th data-column-index="4">가용<span class="sort-icon"></span></th>
+            <th data-column-index="5">보관함<span class="sort-icon"></span></th>
+            <th data-column-index="6">최근 변동<span class="sort-icon"></span></th>
+            <th data-column-index="7">비고<span class="sort-icon"></span></th>
+          </tr>
+          </thead>
+          <tbody id="ammo-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { bootHeader } from './assets/js/header.js';
+    import './assets/js/page_ammo_full.js';
+    await bootHeader();
+  </script>
+</body>
+</html>

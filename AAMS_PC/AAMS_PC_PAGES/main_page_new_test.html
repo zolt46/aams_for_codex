@@ -1,0 +1,73 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AAMS 대시보드(관리자)</title>
+<link rel="stylesheet" href="assets/css/aams.css"/>
+<link rel="stylesheet" href="assets/css/modal.css"/>
+<link rel="stylesheet" href="assets/css/toast.css"/>
+</head><body>
+<main class="main-content">
+  <!-- 대시보드 요약만 표시 -->
+  <div class="page-container">
+    <h2 class="section-title">대시보드 요약</h2>
+    <div class="dashboard-summary" style="text-align:center">
+      <p>인원 <strong id="dash-person">0</strong> | 총기 <strong id="dash-firearm">0</strong> | 탄약 품목 <strong id="dash-ammo">0</strong></p>
+    </div>
+  </div>
+
+  <!-- 재원 관리 섹션 (대시보드 밖) -->
+  <section class="menu-section">
+    <h3 class="menu-section-title">재원 관리</h3>
+    <div class="menu-grid">
+      <a href="new_resources_firearm_test.html" class="menu-item">
+        <div class="icon">🔫</div>
+        <div class="menu-title">총기 현황</div>
+        <div class="menu-description">부대 내 총기 재원 상태 확인</div>
+      </a>
+      <a href="new_resources_ammo_test.html" class="menu-item">
+        <div class="icon">📦</div>
+        <div class="menu-title">탄약 현황</div>
+        <div class="menu-description">탄약 재고 및 상태 확인</div>
+      </a>
+      <a href="new_resources_person_test.html" class="menu-item">
+        <div class="icon">🧑‍🤝‍🧑</div>
+        <div class="menu-title">인원 현황</div>
+        <div class="menu-description">현재 인원 배치 및 상태 확인</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- 신청 및 승인 관리 섹션 -->
+  <section class="menu-section">
+    <h3 class="menu-section-title">신청 및 승인 관리</h3>
+    <div class="menu-grid">
+      <a href="new_workcenter_apply.html" class="menu-item">
+        <div class="icon">🧾</div>
+        <div class="menu-title">신청하기</div>
+        <div class="menu-description">총기/탄약 불출·반납 신청</div>
+      </a>
+      <a href="new_workcenter_approvals.html" class="menu-item">
+        <div class="icon">✅</div>
+        <div class="menu-title">승인함</div>
+        <div class="menu-description">대기/승인/거부 및 집행</div>
+      </a>
+      <a href="new_workcenter_my_history.html" class="menu-item">
+        <div class="icon">🕓</div>
+        <div class="menu-title">내 이력</div>
+        <div class="menu-description">내 신청 처리 현황</div>
+      </a>
+      <a href="new_workcenter_logs.html" class="menu-item">
+        <div class="icon">📜</div>
+        <div class="menu-title">전체 로그</div>
+        <div class="menu-description">집행/변동 감사 이력</div>
+      </a>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import { bootHeader } from './assets/js/header.js';
+  import { injectModal } from './assets/js/modal.js';
+  import './assets/js/page_main_admin.js';
+  await bootHeader(); await injectModal();
+</script>
+</body></html>
