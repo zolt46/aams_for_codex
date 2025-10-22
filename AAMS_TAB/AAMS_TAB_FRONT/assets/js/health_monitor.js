@@ -169,15 +169,25 @@ export async function refreshStatusMonitor() {
     let localValue = localOk ? "대기 중" : "끊김";
     let localDetail = localOk ? "센서 상태 미확인" : describeError(local.error);
     if (localOk) {
+      const robot = local.data?.robot || {};
+      const activeRobot = robot?.active;
+      const lastRobot = robot?.last;
       const serialConnected = !!local.data?.serial?.connected;
       const manualActive = !!local.data?.identify?.manual?.active;
       const running = !!local.data?.identify?.running;
       const sessionInfo = local.data?.identify?.manual;
       const path = local.data?.serial?.path;
+
       if (!serialConnected) {
         localState = "degraded";
         localValue = "센서 미연결";
         localDetail = "센서를 찾을 수 없습니다.";
+      } else if (activeRobot && activeRobot.status === "running") {
+        localState = "online";
+        localValue = "장비 동작 중";
+        const stage = activeRobot.stage ? `${activeRobot.stage}` : "장비 명령";
+        const message = activeRobot.message || "장비 제어 진행 중";
+        localDetail = `${message} (${stage})`;
       } else if (manualActive || running) {
         localState = "online";
         localValue = "스캔 중";
@@ -188,6 +198,18 @@ export async function refreshStatusMonitor() {
         } else {
           localDetail = "지문 대기 중";
         }
+      } else if (lastRobot && lastRobot.status === "failed") {
+        localState = "degraded";
+        localValue = "장비 오류";
+        localDetail = lastRobot.message || "최근 장비 명령 실패";
+      } else if (robot.enabled === false) {
+        localState = "degraded";
+        localValue = "장비 비활성";
+        localDetail = "장비 제어가 비활성화되었습니다.";
+      } else if (robot.enabled && robot.scriptExists === false) {
+        localState = "degraded";
+        localValue = "장비 준비 필요";
+        localDetail = "제어 스크립트를 찾을 수 없습니다.";
       } else {
         localState = "online";
         localValue = "대기 중";

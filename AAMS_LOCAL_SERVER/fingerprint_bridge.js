@@ -10,7 +10,11 @@
  * 필요한 패키지: serialport, @serialport/parser-readline, ws, dotenv
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
+
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { SerialPort } = require('serialport');
 const { ReadlineParser } = require('@serialport/parser-readline');
@@ -35,6 +39,13 @@ const DEBUG_WS_PORT  = Number(process.env.DEBUG_WS_PORT || 8787);
 const DEFAULT_LED_ON = { mode: 'breathing', color: 'blue', speed: 18 };
 const DEFAULT_LED_OFF = { mode: 'off' };
 
+const PYTHON_BIN = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+const ROBOT_SCRIPT = process.env.ROBOT_SCRIPT || path.join(__dirname, 'robot_simulator.py');
+const ROBOT_DISABLED = (process.env.ROBOT_DISABLED || '') === '1';
+const ROBOT_FORWARD_URL = process.env.ROBOT_FORWARD_URL || process.env.RENDER_ROBOT_URL || FORWARD_URL || '';
+const ROBOT_FORWARD_TOKEN = process.env.ROBOT_FORWARD_TOKEN || process.env.RENDER_ROBOT_TOKEN || FORWARD_TOKEN || '';
+
+
 function log(...args){ console.log('[fp-bridge]', ...args); }
 function warn(...args){ console.warn('[fp-bridge]', ...args); }
 const sleep = (ms)=>new Promise((resolve)=>setTimeout(resolve, ms));
@@ -52,12 +63,38 @@ let manualIdentifyRequested = false;
 let manualIdentifyDeadline = 0;
 
 const forwardStatus = { enabled: !!FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
+const robotForwardStatus = { enabled: !!ROBOT_FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
 const ledState = { mode: null, color: null, speed: null, cycles: null, ok: null, pending: false, lastCommandAt: 0 };
 let lastIdentifyEvent = null;
 let lastIdentifyAt = 0;
 let lastSerialEventAt = 0;
 
+let robotJobCounter = 0;
+const ROBOT_HISTORY_LIMIT = 10;
+const robotState = {
+  enabled: !ROBOT_DISABLED,
+  python: PYTHON_BIN,
+  script: path.resolve(ROBOT_SCRIPT),
+  scriptExists: false,
+  active: null,
+  last: null,
+  history: [],
+  lastEventAt: 0
+};
+
+
 const timeNow = () => Date.now();
+
+function updateRobotScriptState(){
+  try {
+    robotState.scriptExists = robotState.script ? fs.existsSync(robotState.script) : false;
+  } catch (err) {
+    robotState.scriptExists = false;
+  }
+}
+
+updateRobotScriptState();
+
 
 async function listCandidates(){
   const ports = await SerialPort.list();
@@ -113,26 +150,26 @@ function writeSerial(obj){
   }
 }
 
-async function forwardToRender(obj){
-  if (!FORWARD_URL || !FORWARD_TOKEN) return;
+async function forwardToRender(obj, { url = FORWARD_URL, token = FORWARD_TOKEN, statusRef = forwardStatus } = {}){
+  if (!url || !token) return;
   try {
-    const res = await fetch(FORWARD_URL, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-fp-token': FORWARD_TOKEN
+        'x-fp-token': token
       },
       body: JSON.stringify({ site: FP_SITE, data: obj })
     });
     if (!res.ok){
-      forwardStatus.lastErrorAt = timeNow();
+      if (statusRef) statusRef.lastErrorAt = timeNow();
       const text = await res.text().catch(() => '');
       warn('forward failed:', res.status, res.statusText, text || '');
     } else {
-      forwardStatus.lastOkAt = timeNow();
+      if (statusRef) statusRef.lastOkAt = timeNow();
     }
   } catch (err) {
-    forwardStatus.lastErrorAt = timeNow();
+    if (statusRef) statusRef.lastErrorAt = timeNow();
     warn('forward error:', err.message || err);
   }
 }
@@ -191,6 +228,229 @@ function applyLedCommand(command){
   }
   return ok;
 }
+
+function sanitizeRobotJob(job, { includePayload = false } = {}){
+  if (!job) return null;
+  const base = {
+    id: job.id,
+    requestId: job.requestId ?? null,
+    eventId: job.eventId ?? null,
+    status: job.status,
+    stage: job.stage || null,
+    message: job.message || null,
+    error: job.error || null,
+    site: job.site || FP_SITE,
+    startedAt: job.startedAt || null,
+    finishedAt: job.finishedAt || null,
+    mode: job.mode || null,
+    progress: job.progress || null
+  };
+  if (includePayload) {
+    base.payload = job.payload;
+  }
+  if (job.result) {
+    base.result = job.result;
+  }
+  return base;
+}
+
+function recordRobotHistory(job){
+  const snapshot = sanitizeRobotJob(job);
+  if (!snapshot) return;
+  robotState.last = snapshot;
+  robotState.history.unshift(snapshot);
+  if (robotState.history.length > ROBOT_HISTORY_LIMIT) {
+    robotState.history.length = ROBOT_HISTORY_LIMIT;
+  }
+}
+
+function forwardRobotEvent(job, update = {}){
+  if (!robotForwardStatus.enabled) return;
+  const payload = {
+    channel: 'robot',
+    site: job?.site || FP_SITE,
+    job: {
+      id: job?.id || null,
+      requestId: job?.requestId ?? null,
+      eventId: job?.eventId ?? null,
+      status: update.status || job?.status || null,
+      stage: update.stage || job?.stage || null,
+      message: update.message || job?.message || null,
+      progress: update.progress || job?.progress || null,
+      mode: job?.mode || null,
+      timestamp: timeNow(),
+      meta: update.meta || null
+    }
+  };
+  forwardToRender(payload, { url: ROBOT_FORWARD_URL, token: ROBOT_FORWARD_TOKEN, statusRef: robotForwardStatus });
+}
+
+function finalizeRobotJob(job, status, info = {}){
+  if (!job || job.finishedAt) return;
+  job.status = status === 'succeeded' ? 'succeeded' : status === 'success' ? 'succeeded' : 'failed';
+  job.finishedAt = timeNow();
+  if (info.stage) job.stage = info.stage;
+  if (info.message) job.message = info.message;
+  if (info.mode) job.mode = info.mode;
+  if (info.progress) job.progress = info.progress;
+  if (info.result) job.result = info.result;
+  if (job.status === 'failed' && info.message && !job.error) {
+    job.error = info.message;
+  }
+  if (info.error) job.error = info.error;
+  robotState.active = null;
+  robotState.lastEventAt = job.finishedAt;
+  recordRobotHistory(job);
+  forwardRobotEvent(job, {
+    status: job.status === 'succeeded' ? 'success' : 'error',
+    stage: job.stage,
+    message: job.message,
+    progress: job.progress,
+    meta: info.result || info.meta || info
+  });
+}
+
+function handleRobotStdout(job, line){
+  if (!job || !line) return;
+  let obj = null;
+  try { obj = JSON.parse(line); }
+  catch (err) {
+    job.logs?.push?.({ type: 'stdout', text: line, at: timeNow(), error: err.message || String(err) });
+    return;
+  }
+  if (obj.event === 'progress'){
+    job.stage = obj.stage || job.stage;
+    job.message = obj.message || job.message;
+    job.mode = obj.mode || job.mode;
+    job.progress = obj;
+    robotState.lastEventAt = timeNow();
+    forwardRobotEvent(job, {
+      status: 'progress',
+      stage: job.stage,
+      message: job.message,
+      progress: obj,
+      meta: obj
+    });
+    return;
+  }
+  if (obj.event === 'complete'){
+    job.stage = obj.stage || job.stage;
+    job.message = obj.message || job.message;
+    job.mode = obj.mode || job.mode;
+    job.result = obj;
+    finalizeRobotJob(job, obj.status === 'success' ? 'succeeded' : 'failed', {
+      stage: job.stage,
+      message: job.message,
+      mode: job.mode,
+      progress: obj,
+      result: obj,
+      error: obj.status === 'success' ? null : (obj.message || obj.error || 'robot_error')
+    });
+    return;
+  }
+  job.logs?.push?.({ type: 'stdout', text: line, at: timeNow() });
+}
+
+function startRobotJob(payload = {}){
+  if (!robotState.enabled){
+    const err = new Error('robot_disabled');
+    err.statusCode = 503;
+    throw err;
+  }
+  updateRobotScriptState();
+  if (!robotState.scriptExists){
+    const err = new Error('robot_script_missing');
+    err.statusCode = 503;
+    throw err;
+  }
+  if (robotState.active && !robotState.active.finishedAt){
+    const err = new Error('robot_busy');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const jobId = (++robotJobCounter);
+  const site = payload.site || payload.site_id || payload.dispatch?.site_id || FP_SITE;
+  const job = {
+    id: jobId,
+    requestId: payload.requestId ?? payload.request_id ?? null,
+    eventId: payload.eventId ?? payload.executionEventId ?? payload.execution_event_id ?? null,
+    payload,
+    site,
+    status: 'starting',
+    stage: 'starting',
+    createdAt: timeNow(),
+    logs: []
+  };
+
+  const proc = spawn(robotState.python || PYTHON_BIN, [robotState.script]);
+  job.process = proc;
+  job.startedAt = timeNow();
+  job.status = 'running';
+  robotState.active = job;
+  robotState.lastEventAt = job.startedAt;
+
+  forwardRobotEvent(job, { status: 'accepted', stage: job.stage, message: 'job accepted' });
+
+  const input = JSON.stringify({
+    ...payload,
+    jobId,
+    site,
+    requestedAt: payload.requestedAt || job.createdAt
+  });
+
+  try {
+    proc.stdin.write(input);
+    proc.stdin.end();
+  } catch (err) {
+    try { proc.kill(); } catch (_) {}
+    robotState.active = null;
+    const error = new Error('robot_spawn_failed');
+    error.cause = err;
+    error.statusCode = 500;
+    throw error;
+  }
+
+  let stdoutBuffer = '';
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', chunk => {
+    stdoutBuffer += String(chunk || '');
+    let idx;
+    while ((idx = stdoutBuffer.indexOf('\n')) >= 0){
+      const line = stdoutBuffer.slice(0, idx).trim();
+      stdoutBuffer = stdoutBuffer.slice(idx + 1);
+      if (line) handleRobotStdout(job, line);
+    }
+  });
+  proc.stdout.on('close', () => {
+    const remaining = stdoutBuffer.trim();
+    if (remaining) handleRobotStdout(job, remaining);
+    stdoutBuffer = '';
+  });
+
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', chunk => {
+    const text = String(chunk || '');
+    job.logs.push({ type: 'stderr', text, at: timeNow() });
+  });
+
+  proc.on('error', err => {
+    job.logs.push({ type: 'error', message: err.message || String(err), at: timeNow() });
+    finalizeRobotJob(job, 'failed', { message: err.message || '프로세스 오류', error: err.message || String(err) });
+  });
+
+  proc.on('close', code => {
+    if (job.finishedAt) return;
+    const message = code === 0 ? '모의 스크립트 종료' : `스크립트 종료 코드 ${code}`;
+    finalizeRobotJob(job, code === 0 ? 'succeeded' : 'failed', {
+      message,
+      meta: { exitCode: code }
+    });
+  });
+
+  return sanitizeRobotJob(job, { includePayload: false });
+}
+
 
 function manualIdentifyActive(){
   if (!manualIdentifyRequested) return false;
@@ -404,7 +664,18 @@ function buildHealthPayload(){
       last: lastIdentifyEvent ? { ...lastIdentifyEvent, at: lastIdentifyAt } : null
     },
     led: { ...ledState },
-    forward: { ...forwardStatus }
+    forward: { ...forwardStatus },
+    robot: {
+      enabled: !!robotState.enabled,
+      python: robotState.python || null,
+      script: robotState.script || null,
+      scriptExists: !!robotState.scriptExists,
+      active: sanitizeRobotJob(robotState.active, { includePayload: false }),
+      last: robotState.last || null,
+      history: robotState.history || [],
+      lastEventAt: robotState.lastEventAt || null,
+      forward: { ...robotForwardStatus }
+    }
   };
 }
 
@@ -502,7 +773,19 @@ async function handleHttpRequest(req, res){
         serial: { connected: !!(serial && serial.isOpen) }
       });
     }
-
+    if (req.method === 'POST' && pathname === '/robot/execute'){
+      const body = await readJson(req);
+      const job = startRobotJob(body || {});
+      return sendJson(res, 200, {
+        ok: true,
+        job,
+        robot: {
+          enabled: robotState.enabled,
+          script: robotState.script,
+          python: robotState.python
+        }
+      });
+    }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (err) {
     const status = err?.statusCode || 500;
@@ -527,7 +810,11 @@ log('env:', {
   FP_SITE,
   LOCAL_PORT,
   DEBUG_WS,
-  DEBUG_WS_PORT
+  DEBUG_WS_PORT,
+  ROBOT_SCRIPT: robotState.script || '',
+  PYTHON_BIN,
+  ROBOT_FORWARD_URL: ROBOT_FORWARD_URL ? '[set]' : '',
+  ROBOT_ENABLED: robotState.enabled
 });
 
 setupDebugWS();

@@ -158,6 +158,9 @@ function renderCard(r) {
   const weaponCode = r.weapon_code ?? r.weapon?.code ?? r.raw?.weapon_code ?? r.raw?.weapon?.code ?? "-";
   const executeState = getExecuteButtonState(r, statusInfo);
   const executionHint = renderExecutionHint(statusInfo);
+  const statusReason = formatStatusReason(r);
+  const summaryNotice = renderStatusNotice(statusInfo, statusReason, { variant: "summary" });
+  const detailNotice = renderStatusNotice(statusInfo, statusReason);
 
   return `
     <article class="card pending-card" data-id="${escapeHtml(requestId)}">
@@ -190,6 +193,7 @@ function renderCard(r) {
           <span class="value">${escapeHtml(approvedAt)}</span>
         </div>
       </div>
+      ${summaryNotice}
       <footer class="card-actions">
         <button class="btn primary" data-act="execute" data-id="${escapeHtml(requestId)}"${executeState.disabled ? " disabled" : ""}>
           <span class="btn-label">${escapeHtml(executeState.label)}</span>
@@ -231,6 +235,7 @@ function renderCard(r) {
             ${renderAmmoList(r)}
           </div>
         </div>
+        ${detailNotice}
         ${executionHint}
       </div>
     </article>`;
@@ -381,6 +386,30 @@ function renderExecutionHint(statusInfo = {}) {
   if (!statusInfo.hint) return "";
   const icon = statusInfo.icon ? `<span class="icon" aria-hidden="true">${escapeHtml(statusInfo.icon)}</span>` : "";
   return `<p class="card-hint">${icon}${escapeHtml(statusInfo.hint)}</p>`;
+}
+
+function formatStatusReason(row = {}) {
+  const candidates = [
+    row.status_reason,
+    row.raw?.status_reason,
+    row.raw?.request?.status_reason,
+    row.raw?.dispatch_reason,
+    row.raw?.execution_reason
+  ];
+  const value = candidates.find((v) => typeof v === "string" && v.trim());
+  return value ? value.trim() : "";
+}
+
+function renderStatusNotice(statusInfo = {}, reason = "", { variant = "detail" } = {}) {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text) return "";
+  const key = String(statusInfo.key || "").toUpperCase();
+  if (!key || key === "APPROVED") return "";
+  const isError = key.includes("FAILED") || ["DISPATCH_FAILED", "EXECUTION_FAILED"].includes(key);
+  const classes = ["card-alert", variant === "summary" ? "compact" : ""]; 
+  if (!isError) classes.push("info");
+  const icon = isError ? "⚠️" : "ℹ️";
+  return `<p class="${classes.filter(Boolean).join(" ")}"><span class="icon" aria-hidden="true">${icon}</span><span>${escapeHtml(text)}</span></p>`;
 }
 
 function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} } = {}) {

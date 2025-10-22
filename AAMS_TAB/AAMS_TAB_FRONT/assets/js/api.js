@@ -81,10 +81,7 @@ export { fetchMyPendingApprovals as fetchUserPending };
 
 // 집행
 export async function executeRequest({ requestId, executorId, dispatch }) {
-  // server.js: POST /api/requests/:id/execute  { executed_by }
-  return _post(`${apiBase()}/api/requests/${encodeURIComponent(requestId)}/execute`, {
-    executed_by: executorId
-  });
+
   const body = { executed_by: executorId };
   if (dispatch) {
     body.dispatch = dispatch;
