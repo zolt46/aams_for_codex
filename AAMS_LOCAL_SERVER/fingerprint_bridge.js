@@ -51,13 +51,7 @@ let manualSessionCounter = 0;
 let manualIdentifyRequested = false;
 let manualIdentifyDeadline = 0;
 
-const forwardState = { enabled: !!FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
-const ledState = { mode: null, color: null, speed: null, cycles: null, ok: null, pending: false, lastCommandAt: 0 };
-let lastIdentifyEvent = null;
-let lastIdentifyAt = 0;
-let lastSerialEventAt = 0;
-
-const forwardState = { enabled: !!FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
+const forwardStatus = { enabled: !!FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
 const ledState = { mode: null, color: null, speed: null, cycles: null, ok: null, pending: false, lastCommandAt: 0 };
 let lastIdentifyEvent = null;
 let lastIdentifyAt = 0;
@@ -129,14 +123,14 @@ async function forwardToRender(obj){
       body: JSON.stringify({ site: FP_SITE, data: obj })
     });
     if (!res.ok){
-      forwardState.lastErrorAt = now();
+      forwardStatus.lastErrorAt = now();
       const text = await res.text().catch(() => '');
       warn('forward failed:', res.status, res.statusText, text || '');
     } else {
-      forwardState.lastOkAt = now();
+      forwardStatus.lastOkAt = now();
     }
   } catch (err) {
-    forwardState.lastErrorAt = now();
+    forwardStatus.lastErrorAt = now();
     warn('forward error:', err.message || err);
   }
 }
@@ -408,7 +402,7 @@ function buildHealthPayload(){
       last: lastIdentifyEvent ? { ...lastIdentifyEvent, at: lastIdentifyAt } : null
     },
     led: { ...ledState },
-    forward: { ...forwardState }
+    forward: { ...forwardStatus }
   };
 }
 

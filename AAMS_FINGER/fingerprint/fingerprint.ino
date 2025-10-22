@@ -12,6 +12,29 @@
 #include <limits.h>
 #include <Adafruit_Fingerprint.h>
 
+#ifndef FINGERPRINT_LED_COLOR_RED
+  #ifdef FINGERPRINT_LED_RED
+    #define FINGERPRINT_LED_COLOR_RED FINGERPRINT_LED_RED
+  #else
+    #define FINGERPRINT_LED_COLOR_RED 0x01
+  #endif
+#endif
+#ifndef FINGERPRINT_LED_COLOR_BLUE
+  #ifdef FINGERPRINT_LED_BLUE
+    #define FINGERPRINT_LED_COLOR_BLUE FINGERPRINT_LED_BLUE
+  #else
+    #define FINGERPRINT_LED_COLOR_BLUE 0x02
+  #endif
+#endif
+#ifndef FINGERPRINT_LED_COLOR_PURPLE
+  #ifdef FINGERPRINT_LED_PURPLE
+    #define FINGERPRINT_LED_COLOR_PURPLE FINGERPRINT_LED_PURPLE
+  #else
+    #define FINGERPRINT_LED_COLOR_PURPLE 0x03
+  #endif
+#endif
+
+
 // ---------- Board/Serial selection ----------
 #if defined(__AVR_ATmega2560__) || defined(ARDUINO_AVR_MEGA2560)
 // Mega 2560: use Serial1 (pins 19=RX1, 18=TX1)

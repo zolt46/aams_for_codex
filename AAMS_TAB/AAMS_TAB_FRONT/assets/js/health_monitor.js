@@ -30,6 +30,8 @@ function ensureMonitorElement() {
   }
   el.classList.add("status-monitor");
   el.dataset.bound = "1";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
   el.innerHTML = `
     <div class="status-monitor-heading">연결 상태</div>
     <div class="status-monitor-items">
@@ -61,6 +63,7 @@ function createItemTemplate(key, label) {
 function placeMonitor() {
   const el = ensureMonitorElement();
   const top = document.getElementById("top");
+  document.body?.classList?.add("has-status-monitor");
   if (top && top.parentNode) {
     if (el.previousElementSibling !== top) {
       top.insertAdjacentElement("afterend", el);
