@@ -1,6 +1,6 @@
 import { getApiBase, getFpLocalBase } from "./util.js";
 
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 10000;
 const INITIAL_TIMEOUT_MS = 4500;
 
 let monitorEl = null;
