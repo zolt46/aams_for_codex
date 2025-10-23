@@ -26,36 +26,36 @@
 
 .execute-status {
   position: absolute;
-  top: clamp(22px, 6vh, 72px);
-  padding: 0.75rem 1.75rem;
-  border-radius: 999px;
-  border: 1px solid rgba(118, 255, 236, 0.32);
-  background: rgba(10, 60, 56, 0.52);
-  backdrop-filter: blur(12px);
-  min-width: clamp(180px, 60vw, 420px);
-  max-width: clamp(220px, 72vw, 520px);
+  top: clamp(28px, 9vh, 120px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 720px);
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
   text-align: center;
-  font-size: clamp(0.82rem, 2vw, 1.08rem);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: clamp(1.05rem, 3vw, 1.75rem);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: inherit;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.35;
+  text-shadow: 0 0 18px rgba(108, 255, 228, 0.4);
+  pointer-events: none;
   z-index: 4;
-  transition: opacity 240ms ease;
 }
 
 .execute-status[data-level="error"] {
-  color: #ffb6c6;
-  border-color: rgba(255, 156, 174, 0.42);
-  background: rgba(80, 12, 28, 0.58);
+  color: #ff9db3;
+  text-shadow: 0 0 18px rgba(255, 157, 179, 0.35);
 }
 
 .execute-status[data-level="success"] {
-  color: #d8fff4;
-  border-color: rgba(152, 255, 234, 0.42);
-  background: rgba(24, 96, 82, 0.52);
+  color: #d6fff5;
+  text-shadow: 0 0 18px rgba(182, 255, 236, 0.32);
 }
 
 .execute-face {

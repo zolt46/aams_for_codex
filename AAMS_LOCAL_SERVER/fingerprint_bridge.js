@@ -696,7 +696,15 @@ function startRobotJob(payload = {}){
     }
   }
 
-  const proc = spawn(robotState.python || PYTHON_BIN, [robotState.script]);
+  const env = {
+    ...process.env,
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUNBUFFERED: '1'
+  };
+  const proc = spawn(robotState.python || PYTHON_BIN, [robotState.script], { env });
+  if (proc.stdin && typeof proc.stdin.setDefaultEncoding === 'function') {
+    proc.stdin.setDefaultEncoding('utf8');
+  }
   job.process = proc;
   job.startedAt = timeNow();
   job.status = 'running';

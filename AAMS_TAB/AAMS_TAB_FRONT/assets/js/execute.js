@@ -259,7 +259,7 @@ function updateStage(stageKey, label, message, { level = "info", expression } = 
   setStatus(label, message, level);
 }
 
-const MAX_STATUS_LENGTH = 48;
+const MAX_STATUS_LENGTH = 120;
 
 function normalizeText(value) {
   if (value === null || value === undefined) return "";
