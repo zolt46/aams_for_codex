@@ -223,7 +223,7 @@ function renderCard(r, { variant = "pending" } = {}) {
   const requestedAt = formatKST(r.requested_at || r.created_at) || "-";
   const approvedAt = formatKST(getLatestApprovalTimestamp(r)) || "-";
   const executedAt = variant === "history" ? (formatKST(getExecutionTimestamp(r)) || "-") : null;
-  const statusInfo = resolveStatusInfo(r.status);
+  const statusInfo = resolveStatusInfo(r.status, r);
   const statusLabel = statusInfo.label;
   const statusClass = `status-${sanitizeToken(statusInfo.key || r.status || "pending")}`;
   const ammoSummary = formatAmmoSummary(r);
@@ -594,11 +594,25 @@ function renderHeroGreeting(me = {}) {
   return lines.join(" ");
 }
 
-function resolveStatusInfo(status) {
-  const key = String(status || "").trim().toUpperCase();
+function resolveStatusInfo(status, row = {}) {
+  let key = String(status || "").trim().toUpperCase();
   if (!key) {
     return { key: "PENDING", label: "대기" };
   }
+
+  if (key === "APPROVED") {
+    const reason = formatStatusReason(row).toLowerCase();
+    if (reason) {
+      if (/(오류|에러|실패)/.test(reason)) {
+        key = "DISPATCH_FAILED";
+      } else if (/(동작|진행)/.test(reason)) {
+        key = "EXECUTING";
+      } else if (/(대기|준비)/.test(reason)) {
+        key = "DISPATCH_PENDING";
+      }
+    }
+  }
+
   const meta = STATUS_METADATA[key];
   if (meta) {
     return { key, ...meta };
@@ -645,9 +659,8 @@ function renderStatusNotice(statusInfo = {}, reason = "", { variant = "detail" }
   const text = typeof reason === "string" ? reason.trim() : "";
   if (!text) return "";
   const key = String(statusInfo.key || "").toUpperCase();
-  if (!key || key === "APPROVED") return "";
   const isError = key.includes("FAILED") || ["DISPATCH_FAILED", "EXECUTION_FAILED"].includes(key);
-  const classes = ["card-alert", variant === "summary" ? "compact" : ""]; 
+  const classes = ["card-alert", variant === "summary" ? "compact" : ""];
   if (!isError) classes.push("info");
   const icon = isError ? "⚠️" : "ℹ️";
   return `<p class="${classes.filter(Boolean).join(" ")}"><span class="icon" aria-hidden="true">${icon}</span><span>${escapeHtml(text)}</span></p>`;
@@ -683,7 +696,6 @@ function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} 
     || detail?.request?.location
     || row?.raw?.request?.location
     || row?.location
-    || firearm?.location
     || null;
 
   const payload = {
@@ -767,8 +779,7 @@ function extractFirearmInfo(row = {}, detail = {}) {
     code,
     type: candidate?.firearm_type || candidate?.weapon_type || candidate?.type || null,
     locker,
-    slot,
-    location: request?.location || row?.location || candidate?.location || null
+    slot
   });
 
   if (info) {
