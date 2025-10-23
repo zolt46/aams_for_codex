@@ -4,7 +4,7 @@ import { openFpEventSource } from "./api.js";
 
 const API_BASE = (window.AAMS_CONFIG && window.AAMS_CONFIG.API_BASE) || "";
 const SITE = window.FP_SITE || "site-01";
-const WAIT_AFTER_SUCCESS_MS = 3000;
+const WAIT_AFTER_SUCCESS_MS = 2000;
 const SCAN_FEEDBACK_DELAY_MS = 420;
 const LOCAL_IDENTIFY_TIMEOUT_MS = 65000;
 const DEFAULT_LED_ON_COMMAND = { mode: "breathing", color: "blue", speed: 18 };

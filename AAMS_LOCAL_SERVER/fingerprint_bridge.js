@@ -61,6 +61,7 @@ let manualSession = null;
 let manualSessionCounter = 0;
 let manualIdentifyRequested = false;
 let manualIdentifyDeadline = 0;
+let activeCommand = null;
 
 const forwardStatus = { enabled: !!FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
 const robotForwardStatus = { enabled: !!ROBOT_FORWARD_URL, lastOkAt: 0, lastErrorAt: 0 };
@@ -83,6 +84,12 @@ const robotState = {
 };
 
 const timeNow = () => Date.now();
+
+function httpError(status, message){
+  const err = new Error(message || 'error');
+  err.statusCode = status;
+  return err;
+}
 
 function cleanObject(obj){
   if (!obj || typeof obj !== 'object') return obj;
@@ -372,6 +379,84 @@ function writeSerial(obj){
     warn('serial write failed:', err.message || err);
     return false;
   }
+}
+
+function ensureSerialReady(){
+  if (!serial || !serial.isOpen || !parser){
+    throw httpError(503, 'serial_not_ready');
+  }
+}
+
+function beginCommand(type, meta = {}){
+  if (activeCommand && !activeCommand.done){
+    throw httpError(409, 'command_in_progress');
+  }
+  activeCommand = {
+    type,
+    startedAt: timeNow(),
+    meta: { ...meta },
+    done: false
+  };
+  return activeCommand;
+}
+
+function finishCommand(entry, { result = null, error = null } = {}){
+  if (!entry) return;
+  entry.done = true;
+  if (result) entry.result = result;
+  if (error) entry.error = error.message || String(error);
+  if (activeCommand === entry){
+    activeCommand = null;
+  }
+}
+
+function waitForCommandResult({ expectedType, timeoutMs = 20000, onStage }){
+  ensureSerialReady();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(httpError(504, 'sensor_timeout'));
+    }, timeoutMs);
+
+    const handler = (obj) => {
+      if (settled || !obj) return;
+      if (obj.stage && typeof onStage === 'function'){
+        try { onStage(obj); } catch (_) {}
+      }
+      if (obj.ok === false){
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        const err = httpError(502, obj.error || 'sensor_error');
+        err.payload = obj;
+        reject(err);
+        return;
+      }
+      if (expectedType && obj.type !== expectedType){
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      resolve(obj);
+    };
+
+    const cleanup = () => { parser?.off('dataLine', handler); };
+    parser?.on('dataLine', handler);
+  });
+}
+
+async function runSensorCommand({ command, payload = {}, expectedType, timeoutMs, onStage }){
+  ensureSerialReady();
+  const wrote = writeSerial({ cmd: command, ...payload });
+  if (!wrote){
+    throw httpError(503, 'serial_write_failed');
+  }
+  const result = await waitForCommandResult({ expectedType, timeoutMs, onStage });
+  return result;
 }
 
 async function forwardToRender(obj, { url = FORWARD_URL, token = FORWARD_TOKEN, statusRef = forwardStatus } = {}){
@@ -817,7 +902,10 @@ function manualIdentifyActive(){
 }
 
 function shouldIdentify(){
-  return AUTO_IDENTIFY || manualIdentifyActive();
+  const active = AUTO_IDENTIFY || manualIdentifyActive();
+  if (!active) return false;
+  if (activeCommand && !activeCommand.done) return false;
+  return true;
 }
 
 function startManualIdentify(options = {}){
@@ -1020,6 +1108,16 @@ function buildHealthPayload(){
     },
     led: { ...ledState },
     forward: { ...forwardStatus },
+    command: activeCommand
+      ? {
+          active: true,
+          type: activeCommand.type,
+          startedAt: activeCommand.startedAt,
+          meta: cleanObject({ ...(activeCommand.meta || {}) }) || null,
+          result: activeCommand.result ? cleanObject({ ...(activeCommand.result || {}) }) : null,
+          error: activeCommand.error || null
+        }
+      : { active: false },
     robot: {
       enabled: !!robotState.enabled,
       python: robotState.python || null,
@@ -1127,6 +1225,104 @@ async function handleHttpRequest(req, res){
         led: { ...ledState },
         serial: { connected: !!(serial && serial.isOpen) }
       });
+    }
+    if (req.method === 'POST' && pathname === '/enroll'){
+      const body = await readJson(req);
+      const id = Number.parseInt(body?.id, 10);
+      if (!Number.isInteger(id) || id <= 0){
+        throw httpError(400, 'missing_or_bad_id');
+      }
+      const timeoutMs = Math.max(10000, Number(body?.timeoutMs) || 45000);
+      const entry = beginCommand('enroll', { id });
+      const ledOnRaw = body?.led === false ? null : (normalizeLedCommand(body?.led) || DEFAULT_LED_ON);
+      const ledOffRaw = body?.ledOff === false ? null : (normalizeLedCommand(body?.ledOff || body?.onStopLed) || DEFAULT_LED_OFF);
+      const ledOnCmd = ledOnRaw ? { ...DEFAULT_LED_ON, ...ledOnRaw } : null;
+      const ledOffCmd = ledOffRaw ? { ...DEFAULT_LED_OFF, ...ledOffRaw } : null;
+      try {
+        stopManualIdentify('command', { turnOffLed: false });
+        if (ledOnCmd) applyLedCommand(ledOnCmd);
+        const result = await runSensorCommand({
+          command: 'enroll',
+          payload: { id },
+          expectedType: 'enroll',
+          timeoutMs,
+          onStage: (stage) => {
+            entry.meta.stage = stage.stage || null;
+            entry.meta.message = stage.msg || stage.message || null;
+            entry.meta.updatedAt = timeNow();
+          }
+        });
+        if (ledOffCmd) applyLedCommand(ledOffCmd);
+        finishCommand(entry, { result });
+        return sendJson(res, 200, { ok: true, result });
+      } catch (err) {
+        if (ledOffCmd) applyLedCommand(ledOffCmd);
+        finishCommand(entry, { error: err });
+        throw err;
+      }
+    }
+    if (req.method === 'POST' && pathname === '/delete'){
+      const body = await readJson(req);
+      const id = Number.parseInt(body?.id, 10);
+      if (!Number.isInteger(id) || id <= 0){
+        throw httpError(400, 'missing_or_bad_id');
+      }
+      const allowMissing = body?.allowMissing === true || body?.allow_missing === true;
+      const timeoutMs = Math.max(6000, Number(body?.timeoutMs) || 15000);
+      const entry = beginCommand('delete', { id });
+      try {
+        stopManualIdentify('command', { turnOffLed: false });
+        const result = await runSensorCommand({
+          command: 'delete',
+          payload: { id },
+          expectedType: 'delete',
+          timeoutMs
+        });
+        finishCommand(entry, { result });
+        return sendJson(res, 200, { ok: true, result });
+      } catch (err) {
+        finishCommand(entry, { error: err });
+        if (allowMissing && err?.payload?.error === 'delete_failed'){
+          return sendJson(res, 200, { ok: true, skipped: true, reason: 'not_found' });
+        }
+        throw err;
+      }
+    }
+    if (req.method === 'POST' && pathname === '/clear'){
+      const body = await readJson(req);
+      const timeoutMs = Math.max(8000, Number(body?.timeoutMs) || 20000);
+      const entry = beginCommand('clear');
+      try {
+        stopManualIdentify('command', { turnOffLed: false });
+        const result = await runSensorCommand({
+          command: 'clear',
+          expectedType: 'clear',
+          timeoutMs
+        });
+        finishCommand(entry, { result });
+        return sendJson(res, 200, { ok: true, result });
+      } catch (err) {
+        finishCommand(entry, { error: err });
+        throw err;
+      }
+    }
+    if (req.method === 'GET' && pathname === '/count'){
+      const timeoutParam = url.searchParams.get('timeoutMs') || url.searchParams.get('timeout_ms');
+      const timeoutMs = Math.max(5000, Number(timeoutParam) || 10000);
+      const entry = beginCommand('count');
+      try {
+        stopManualIdentify('command', { turnOffLed: false });
+        const result = await runSensorCommand({
+          command: 'count',
+          expectedType: 'count',
+          timeoutMs
+        });
+        finishCommand(entry, { result });
+        return sendJson(res, 200, { ok: true, result });
+      } catch (err) {
+        finishCommand(entry, { error: err });
+        throw err;
+      }
     }
     if (req.method === 'POST' && pathname === '/robot/execute'){
       const body = await readJson(req);

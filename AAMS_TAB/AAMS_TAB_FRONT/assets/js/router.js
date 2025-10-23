@@ -3,6 +3,7 @@ import * as FP from "./fingerprint.js";
 import * as UserPage from "./user.js";
 import * as AdminPage from "./admin.js";
 import * as ExecutePage from "./execute.js";
+import * as AdminFpPage from "./admin_fp.js";
 
 import { assertApiBaseHealthy } from "./util.js";
 import { mountStatusMonitor, unmountStatusMonitor, refreshStatusMonitor } from "./health_monitor.js";
@@ -25,6 +26,10 @@ const routes = {
   "#/admin-requests": {
     candidates:["./pages/admin_requests.html", "./admin_requests.html"],
     init: AdminPage.initAdminRequests
+  },
+  "#/admin-fp": {
+    candidates:["./pages/admin_fp_manage.html"],
+    init: AdminFpPage.initAdminFingerprintManage
   },
 };
 
