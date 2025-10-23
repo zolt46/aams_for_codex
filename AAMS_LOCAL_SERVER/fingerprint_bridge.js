@@ -1132,14 +1132,34 @@ function buildHealthPayload(){
   };
 }
 
-function applyCors(res){
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function applyCors(req, res){
+  const origin = req?.headers?.origin;
+  const varyParts = new Set();
+  if (origin){
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    varyParts.add('Origin');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  const requestedHeaders = req?.headers?.['access-control-request-headers'];
+  if (requestedHeaders){
+    res.setHeader('Access-Control-Allow-Headers', requestedHeaders);
+    varyParts.add('Access-Control-Request-Headers');
+  } else {
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+
+  if (varyParts.size){
+    res.setHeader('Vary', Array.from(varyParts).join(', '));
+  }
+
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 }
 
-function sendJson(res, status, payload){
-  applyCors(res);
+function sendJson(req, res, status, payload){
+  applyCors(req, res);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload ?? {}));
 }
@@ -1161,7 +1181,7 @@ async function readJson(req){
 }
 
 async function handleHttpRequest(req, res){
-  applyCors(res);
+  applyCors(req, res);
   if (req.method === 'OPTIONS'){
     res.writeHead(204);
     res.end();
@@ -1173,7 +1193,7 @@ async function handleHttpRequest(req, res){
 
   try {
     if (req.method === 'GET' && pathname === '/health'){
-      return sendJson(res, 200, buildHealthPayload());
+      return sendJson(req, res, 200, buildHealthPayload());
     }
 
     if (req.method === 'POST' && pathname === '/identify/start'){
@@ -1185,7 +1205,7 @@ async function handleHttpRequest(req, res){
         site: body?.site
       });
       identifyLoop();
-      return sendJson(res, 200, {
+      return sendJson(req, res, 200, {
         ok: true,
         session: {
           id: session.id,
@@ -1205,7 +1225,7 @@ async function handleHttpRequest(req, res){
       const turnOffLed = body?.led === false ? false : true;
       const ledOverride = (turnOffLed && body && typeof body.led === 'object') ? body.led : null;
       const session = stopManualIdentify(body?.reason || 'manual_stop', { turnOffLed, ledOverride });
-      return sendJson(res, 200, {
+      return sendJson(req, res, 200, {
         ok: true,
         session: session ? {
           id: session.id,
@@ -1220,7 +1240,7 @@ async function handleHttpRequest(req, res){
     if (req.method === 'POST' && pathname === '/led'){
       const body = await readJson(req);
       const ok = applyLedCommand(body);
-      return sendJson(res, ok ? 200 : 503, {
+      return sendJson(req, res, ok ? 200 : 503, {
         ok,
         led: { ...ledState },
         serial: { connected: !!(serial && serial.isOpen) }
@@ -1254,7 +1274,7 @@ async function handleHttpRequest(req, res){
         });
         if (ledOffCmd) applyLedCommand(ledOffCmd);
         finishCommand(entry, { result });
-        return sendJson(res, 200, { ok: true, result });
+        return sendJson(req, res, 200, { ok: true, result });
       } catch (err) {
         if (ledOffCmd) applyLedCommand(ledOffCmd);
         finishCommand(entry, { error: err });
@@ -1279,11 +1299,11 @@ async function handleHttpRequest(req, res){
           timeoutMs
         });
         finishCommand(entry, { result });
-        return sendJson(res, 200, { ok: true, result });
+        return sendJson(req, res, 200, { ok: true, result });
       } catch (err) {
         finishCommand(entry, { error: err });
         if (allowMissing && err?.payload?.error === 'delete_failed'){
-          return sendJson(res, 200, { ok: true, skipped: true, reason: 'not_found' });
+          return sendJson(req, res, 200, { ok: true, skipped: true, reason: 'not_found' });
         }
         throw err;
       }
@@ -1300,7 +1320,7 @@ async function handleHttpRequest(req, res){
           timeoutMs
         });
         finishCommand(entry, { result });
-        return sendJson(res, 200, { ok: true, result });
+        return sendJson(req, res, 200, { ok: true, result });
       } catch (err) {
         finishCommand(entry, { error: err });
         throw err;
@@ -1318,7 +1338,7 @@ async function handleHttpRequest(req, res){
           timeoutMs
         });
         finishCommand(entry, { result });
-        return sendJson(res, 200, { ok: true, result });
+        return sendJson(req, res, 200, { ok: true, result });
       } catch (err) {
         finishCommand(entry, { error: err });
         throw err;
@@ -1333,7 +1353,7 @@ async function handleHttpRequest(req, res){
         });
         const status = String(result?.status || '').toLowerCase();
         const success = status === 'succeeded';
-        return sendJson(res, success ? 200 : 500, {
+        return sendJson(req, res, success ? 200 : 500, {
           ok: success,
           job: result,
           robot: {
@@ -1345,7 +1365,7 @@ async function handleHttpRequest(req, res){
       } catch (err) {
         const statusCode = err?.statusCode || 504;
         const snapshot = err?.job || sanitizeRobotJob(job, { includePayload: true });
-        return sendJson(res, statusCode, {
+        return sendJson(req, res, statusCode, {
           ok: false,
           error: err?.message || 'robot_failed',
           job: snapshot,
@@ -1357,10 +1377,10 @@ async function handleHttpRequest(req, res){
         });
       }
     }
-    return sendJson(res, 404, { ok: false, error: 'not_found' });
+    return sendJson(req, res, 404, { ok: false, error: 'not_found' });
   } catch (err) {
     const status = err?.statusCode || 500;
-    return sendJson(res, status, { ok: false, error: err.message || 'server_error' });
+    return sendJson(req, res, status, { ok: false, error: err.message || 'server_error' });
   }
 }
 
