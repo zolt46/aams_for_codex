@@ -134,27 +134,66 @@ function cleanObject(obj){
   return obj;
 }
 
+function normalizeFlag(value){
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string'){
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return undefined;
+    if (['true', '1', 'yes', 'y', 'on'].includes(trimmed)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(trimmed)) return false;
+  }
+  return Boolean(value);
+}
+
 function summarizeRobotPayload(payload = {}){
   if (!payload || typeof payload !== 'object') return null;
 
-  const includesInput = (payload.includes && typeof payload.includes === 'object') ? payload.includes : {};
-  const hasFirearmFlag = Object.prototype.hasOwnProperty.call(includesInput, 'firearm');
-  const hasAmmoFlag = Object.prototype.hasOwnProperty.call(includesInput, 'ammo');
+  const dispatch = (payload.dispatch && typeof payload.dispatch === 'object') ? payload.dispatch : {};
 
-  const firearmIncluded = hasFirearmFlag ? !!includesInput.firearm : !!payload.firearm;
-  const ammoIncluded = hasAmmoFlag ? !!includesInput.ammo : (Array.isArray(payload.ammo) && payload.ammo.length > 0);
+  const includesInput = (payload.includes && typeof payload.includes === 'object') ? payload.includes : {};
+  const includesDispatch = (dispatch.includes && typeof dispatch.includes === 'object') ? dispatch.includes : {};
+
+  let firearmIncluded = Object.prototype.hasOwnProperty.call(includesInput, 'firearm')
+    ? normalizeFlag(includesInput.firearm)
+    : Object.prototype.hasOwnProperty.call(includesDispatch, 'firearm')
+      ? normalizeFlag(includesDispatch.firearm)
+      : undefined;
+
+  if (firearmIncluded === undefined) {
+    firearmIncluded = !!(payload.firearm || dispatch.firearm);
+  }
+
+  let ammoIncluded = Object.prototype.hasOwnProperty.call(includesInput, 'ammo')
+    ? normalizeFlag(includesInput.ammo)
+    : Object.prototype.hasOwnProperty.call(includesDispatch, 'ammo')
+      ? normalizeFlag(includesDispatch.ammo)
+      : undefined;
+
+  if (ammoIncluded === undefined) {
+    ammoIncluded = (Array.isArray(payload.ammo) && payload.ammo.length > 0)
+      || (Array.isArray(dispatch.ammo) && dispatch.ammo.length > 0);
+  }
+
+  const firearmHas = !!firearmIncluded;
+  const ammoHas = !!ammoIncluded;
 
   let action = String(payload.mode || '').toLowerCase();
+  if (['firearm_and_ammo', 'firearm_only', 'ammo_only', 'dispatch', 'issue', 'out', '불출'].includes(action)) {
+    action = 'dispatch';
+  } else if (['return', 'incoming', 'in', '입고', '불입'].includes(action)) {
+    action = 'return';
+  }
   const typeRaw = String(payload.type || payload.request_type || '').toUpperCase();
   if (!action){
     if (typeRaw === 'RETURN') action = 'return';
     else if (typeRaw === 'DISPATCH' || typeRaw === 'ISSUE') action = 'dispatch';
   }
   if (!action){
-    action = firearmIncluded || ammoIncluded ? 'dispatch' : 'unknown';
+    action = firearmHas || ammoHas ? 'dispatch' : 'unknown';
   }
 
-  const dispatch = payload.dispatch && typeof payload.dispatch === 'object' ? payload.dispatch : {};
   const firearm = payload.firearm || dispatch.firearm || {};
   const firearmCode = firearm.code
     || firearm.firearm_number
@@ -175,7 +214,9 @@ function summarizeRobotPayload(payload = {}){
     || (payload.request && (payload.request.locker || payload.request.storage_locker))
     || null;
 
-  const ammoItems = Array.isArray(payload.ammo) ? payload.ammo : [];
+  const ammoItems = Array.isArray(payload.ammo) && payload.ammo.length
+    ? payload.ammo
+    : (Array.isArray(dispatch.ammo) ? dispatch.ammo : []);
   const ammoSummaryParts = [];
   let ammoCount = 0;
   for (const item of ammoItems){
@@ -196,16 +237,16 @@ function summarizeRobotPayload(payload = {}){
   const ammoCountValue = Number.isFinite(ammoCount) ? ammoCount : null;
   const hasAmmoSummary = ammoSummaryParts.length > 0;
 
-  const includesLabel = firearmIncluded && ammoIncluded
+  const includesLabel = firearmHas && ammoHas
     ? '총기+탄약'
-    : (firearmIncluded ? '총기' : (ammoIncluded ? '탄약' : '기타'));
+    : (firearmHas ? '총기' : (ammoHas ? '탄약' : '기타'));
 
   const summary = {
     requestId: payload.requestId ?? payload.request_id ?? null,
     action,
     actionLabel: action === 'return' ? '불입' : (action === 'dispatch' ? '불출' : '장비'),
     type: typeRaw || null,
-    includes: { firearm: firearmIncluded, ammo: ammoIncluded, label: includesLabel },
+    includes: { firearm: firearmHas, ammo: ammoHas, label: includesLabel },
     firearmCode,
     ammoSummary: hasAmmoSummary ? ammoSummaryParts.join(', ') : null,
     ammoCount: hasAmmoSummary ? ammoCountValue : null,
@@ -326,14 +367,18 @@ function writeSerial(obj){
 }
 
 async function forwardToRender(obj, { url = FORWARD_URL, token = FORWARD_TOKEN, statusRef = forwardStatus } = {}){
-  if (!url || !token) return;
+  if (!url) return;
   try {
+    const headers = {
+      'content-type': 'application/json'
+    };
+    if (token) {
+      headers['x-fp-token'] = token;
+      headers['x-robot-token'] = token;
+    }
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-fp-token': token
-      },
+      headers,
       body: JSON.stringify({ site: FP_SITE, data: obj })
     });
     if (!res.ok){
