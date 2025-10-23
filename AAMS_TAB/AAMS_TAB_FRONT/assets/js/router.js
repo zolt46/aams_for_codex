@@ -5,7 +5,7 @@ import * as AdminPage from "./admin.js";
 import * as ExecutePage from "./execute.js";
 
 import { assertApiBaseHealthy } from "./util.js";
-import { mountStatusMonitor, unmountStatusMonitor } from "./health_monitor.js";
+import { mountStatusMonitor, unmountStatusMonitor, refreshStatusMonitor } from "./health_monitor.js";
 
 
 // 라우트별: 1) 주입할 파일 후보, 2) 주입 후 실행할 init 함수
@@ -118,11 +118,14 @@ export async function mountRoute(){
   try{
     const html = await loadFirst(config.candidates ?? []);
     app.innerHTML = html;            // 1) 조각 주입
-    await config.init?.();           // 2) 조각용 초기화 실행 (여기가 ⬅ 핵심!)
     if (key === "#/execute") {
       unmountStatusMonitor();
     } else {
-      mountStatusMonitor();          // 3) 상태 모니터 업데이트
+      mountStatusMonitor({ immediate: false });
+    }
+    await config.init?.();           // 2) 조각용 초기화 실행 (여기가 ⬅ 핵심!)
+    if (key !== "#/execute") {
+      refreshStatusMonitor();
     }
   }catch(e){
     const tried = config.candidates?.join(" | ") ?? "(없음)";

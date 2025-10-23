@@ -14,18 +14,17 @@ import {
   clearExecuteContext
 } from "./execute_context.js";
 
-const DOT_ROWS = 36;
-const DOT_COLS = 64;
+const DOT_ROWS = 48;
+const DOT_COLS = 80;
 const DOT_COUNT = DOT_ROWS * DOT_COLS;
 
 const EYE_WIDTH = 12;
-const EYE_HEIGHT = 6;
-const EYE_ROW = 10;
-const LEFT_EYE_COL = 14;
+const EYE_HEIGHT = 12;
+const EYE_ROW = 14;
+const LEFT_EYE_COL = 18;
 const RIGHT_EYE_COL = DOT_COLS - LEFT_EYE_COL - EYE_WIDTH;
-const MOUTH_WIDTH = 22;
-const MOUTH_ROW = 26;
-const MOUTH_COL = Math.floor((DOT_COLS - MOUTH_WIDTH) / 2);
+const PUPIL_WIDTH = 3;
+const PUPIL_HEIGHT = 3;
 
 const WAITING_MESSAGES = [
   "경로 확보 중",
@@ -42,38 +41,40 @@ const FAILURE_STAGES = new Set([
   "missing"
 ]);
 
-function buildHatBandExtra() {
-  const bandRow = Math.max(0, EYE_ROW - 6);
-  const width = (RIGHT_EYE_COL + EYE_WIDTH) - LEFT_EYE_COL;
-  return {
-    points: [
-      ...rectCoords(bandRow, LEFT_EYE_COL - 3, 1, width + 6),
-      ...rectCoords(bandRow + 1, LEFT_EYE_COL - 2, 1, width + 4)
-    ]
-  };
-}
-
-function buildSaluteHandExtra() {
-  const startRow = EYE_ROW + 1;
-  const startCol = RIGHT_EYE_COL + EYE_WIDTH - 3;
-  return {
-    points: [
-      ...rectCoords(startRow - 1, startCol + 1, 1, 3),
-      ...rectCoords(startRow, startCol, 1, 5),
-      ...rectCoords(startRow + 1, startCol + 1, 1, 4),
-      ...rectCoords(startRow + 2, startCol + 2, 1, 3)
-    ]
-  };
-}
+const LETTER_TEMPLATES = {
+  A: [
+    "  ###  ",
+    " #   # ",
+    " #   # ",
+    " ##### ",
+    " #   # ",
+    " #   # "
+  ],
+  M: [
+    " #   # ",
+    " ## ## ",
+    " # # # ",
+    " #   # ",
+    " #   # ",
+    " #   # "
+  ],
+  S: [
+    "  #### ",
+    " #     ",
+    " ###   ",
+    "    #  ",
+    "    #  ",
+    " ####  "
+  ]
+};
 
 function buildSparkleExtra() {
   const coords = [
-    [EYE_ROW - 6, LEFT_EYE_COL - 3],
-    [EYE_ROW - 5, LEFT_EYE_COL - 5],
-    [EYE_ROW - 4, LEFT_EYE_COL - 2],
-    [EYE_ROW - 6, RIGHT_EYE_COL + EYE_WIDTH + 3],
-    [EYE_ROW - 5, RIGHT_EYE_COL + EYE_WIDTH + 5],
-    [EYE_ROW - 4, RIGHT_EYE_COL + EYE_WIDTH + 2]
+    [EYE_ROW - 3, LEFT_EYE_COL - 4],
+    [EYE_ROW - 2, LEFT_EYE_COL - 1],
+    [EYE_ROW - 4, RIGHT_EYE_COL + EYE_WIDTH + 2],
+    [EYE_ROW - 3, RIGHT_EYE_COL + EYE_WIDTH + 4],
+    [EYE_ROW - 2, RIGHT_EYE_COL + EYE_WIDTH + 1]
   ];
   return {
     points: coordsIndices(coords),
@@ -98,37 +99,34 @@ const STAGE_BASE_EXPRESSION = {
 
 const LEFT_EYE = { row: EYE_ROW, col: LEFT_EYE_COL };
 const RIGHT_EYE = { row: EYE_ROW, col: RIGHT_EYE_COL };
-const MOUTH = { row: MOUTH_ROW, col: MOUTH_COL };
 
 const EXPRESSIONS = {
-  sleep: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "neutral" }),
-  idle: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "soft-smile" }),
-  focus: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center", mouth: "neutral" }),
-  determined: createExpression({ leftEye: "narrow", rightEye: "narrow", leftPupil: "center", rightPupil: "center", mouth: "soft-smile" }),
-  lookLeft: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "left", rightPupil: "left", mouth: "soft-smile" }),
-  lookRight: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "right", rightPupil: "right", mouth: "soft-smile" }),
-  lookUp: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "up", rightPupil: "up", mouth: "neutral" }),
-  lookDown: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "down", rightPupil: "down", mouth: "soft-smile" }),
-  blink: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "neutral" }),
-  wink: createExpression({ leftEye: "open", rightEye: "closed", leftPupil: "center", rightPupil: "none", mouth: "soft-smile" }),
-  winkLeft: createExpression({ leftEye: "closed", rightEye: "open", leftPupil: "none", rightPupil: "center", mouth: "soft-smile" }),
-  grin: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "open" }),
-  smile: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "smile" }),
-  calm: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center", mouth: "neutral" }),
-  sad: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center", mouth: "frown" }),
-  sparkle: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "soft-smile", extras: [buildSparkleExtra()] }),
-  proud: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "up", rightPupil: "up", mouth: "smile", extras: [buildHatBandExtra()] }),
-  salute: createExpression({ leftEye: "soft", rightEye: "open", leftPupil: "center", rightPupil: "up", mouth: "smile", extras: [buildHatBandExtra(), buildSaluteHandExtra()] }),
-  surprised: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "open" })
+  sleep: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none" }),
+  idle: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center" }),
+  focus: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center" }),
+  determined: createExpression({ leftEye: "narrow", rightEye: "narrow", leftPupil: "center", rightPupil: "center" }),
+  lookLeft: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "left", rightPupil: "left" }),
+  lookRight: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "right", rightPupil: "right" }),
+  lookUp: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "up", rightPupil: "up" }),
+  lookDown: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "down", rightPupil: "down" }),
+  blink: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none" }),
+  wink: createExpression({ leftEye: "open", rightEye: "closed", leftPupil: "center", rightPupil: "none" }),
+  winkLeft: createExpression({ leftEye: "closed", rightEye: "open", leftPupil: "none", rightPupil: "center" }),
+  smile: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center" }),
+  calm: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "down", rightPupil: "down" }),
+  sad: createExpression({ leftEye: "narrow", rightEye: "narrow", leftPupil: "down", rightPupil: "down" }),
+  sparkle: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", extras: [buildSparkleExtra()] }),
+  celebrate: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "up", rightPupil: "up", extras: [buildSparkleExtra()] }),
+  surprised: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center" })
 };
 
 
 const EXPRESSION_ALIASES = {
   happy: "smile",
-  success: "smile",
-  celebrate: "salute",
-  saluting: "salute",
-  proud: "proud",
+  success: "celebrate",
+  celebrate: "celebrate",
+  saluting: "celebrate",
+  proud: "celebrate",
   sparkle: "sparkle"
 };
 
@@ -161,6 +159,10 @@ export async function initExecutionPage() {
     console.error("[AAMS][execute] 필수 요소를 찾지 못했습니다.");
     return;
   }
+
+  exiting = false;
+  stopAmbientMessages();
+  stopAmbientAnimations();
 
   if (exitBtn) {
     exitBtn.hidden = true;
@@ -306,7 +308,7 @@ async function runExecutionFlow(initialContext) {
   }
 
   invalidateRequestDetail(requestId);
-  enableExit({ autoDelay: 45000 });
+  enableExit({ autoDelay: 90000 });
 }
 
 function updateStage(stageKey, label, message, { level = "info", expression } = {}) {
@@ -364,10 +366,7 @@ function applyStatus() {
   if (ambientMessage) {
     full = ambientMessage;
   } else {
-    const parts = [];
-    if (statusLabel) parts.push(statusLabel);
-    if (statusMessage && statusMessage !== statusLabel) parts.push(statusMessage);
-    full = parts.join(" · ");
+    full = statusMessage || statusLabel || "";
   }
   const safe = full || "\u00A0";
   const display = truncateStatus(safe);
@@ -424,7 +423,7 @@ function stopAmbientAnimations() {
 function playCelebrationSequence() {
   stopAmbientAnimations();
   const fallback = resolveExpressionName(baseExpression === "sad" ? "smile" : baseExpression || "smile");
-  applyExpression("salute");
+  applyExpression("celebrate");
   setTimeout(() => {
     setBaseExpression(fallback);
     applyExpression(fallback);
@@ -442,9 +441,9 @@ function pickAmbientExpressions() {
   if (base === "sleep") return [];
   if (base === "sad") return ["blink", "lookLeft", "lookRight", "lookDown"];
   if (base === "smile") return ["blink", "wink", "winkLeft", "lookLeft", "lookRight", "sparkle"];
-  if (base === "determined" || base === "focus") return ["blink", "lookLeft", "lookRight", "lookUp"];
-  if (base === "calm") return ["blink", "lookLeft", "lookRight", "lookDown"];
-  return ["blink", "lookLeft", "lookRight", "wink", "winkLeft", "lookUp", "lookDown", "sparkle", "proud"];
+  if (base === "determined" || base === "focus") return ["blink", "lookLeft", "lookRight", "lookUp", "lookDown"];
+  if (base === "calm") return ["blink", "lookLeft", "lookRight", "lookDown", "lookUp"];
+  return ["blink", "lookLeft", "lookRight", "wink", "winkLeft", "lookUp", "lookDown", "sparkle", "celebrate"];
 }
 
 function playMicroExpression(name, duration = 400) {
@@ -525,24 +524,126 @@ function randomScatter(count) {
   });
 }
 
+function shuffleList(values) {
+  const arr = Array.from(values);
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+async function revealPattern(pattern, { steps = 14, delay = 48 } = {}) {
+  if (!pattern || !pattern.on || !pattern.on.size) return;
+  const order = shuffleList(pattern.on);
+  const chunk = Math.max(1, Math.ceil(order.length / steps));
+  const onSet = new Set();
+  const accentSet = new Set(pattern.accent || []);
+  for (let i = 0; i < order.length; i += chunk) {
+    for (let j = i; j < Math.min(order.length, i + chunk); j += 1) {
+      onSet.add(order[j]);
+    }
+    renderPattern({ on: onSet, accent: accentSet });
+    await wait(delay);
+  }
+}
+
+async function dissolvePattern(pattern, { steps = 12, delay = 50, scatterRatio = 0 } = {}) {
+  if (!pattern || !pattern.on || !pattern.on.size) {
+    if (scatterRatio > 0) {
+      randomScatter(Math.floor(DOT_COUNT * scatterRatio));
+    } else {
+      randomScatter(0);
+    }
+    return;
+  }
+  const order = shuffleList(pattern.on);
+  const chunk = Math.max(1, Math.ceil(order.length / steps));
+  const onSet = new Set(pattern.on);
+  const accentSet = new Set(pattern.accent || []);
+  for (let i = 0; i < order.length; i += chunk) {
+    for (let j = i; j < Math.min(order.length, i + chunk); j += 1) {
+      const value = order[j];
+      onSet.delete(value);
+      accentSet.delete(value);
+    }
+    renderPattern({ on: onSet, accent: accentSet });
+    await wait(delay);
+  }
+  const scatterCount = scatterRatio > 0 ? Math.floor(DOT_COUNT * scatterRatio) : 0;
+  if (scatterCount > 0) {
+    randomScatter(scatterCount);
+  } else {
+    randomScatter(0);
+  }
+}
+
+function composeWordLines(word = "AAMS") {
+  const letters = word.toUpperCase().split("");
+  const rows = LETTER_TEMPLATES.A.length;
+  const gap = "  ";
+  const lines = Array.from({ length: rows }, () => "");
+  letters.forEach((char, index) => {
+    const template = LETTER_TEMPLATES[char] || LETTER_TEMPLATES.A;
+    for (let row = 0; row < rows; row += 1) {
+      lines[row] += template[row] || "";
+      if (index !== letters.length - 1) {
+        lines[row] += gap;
+      }
+    }
+  });
+  return lines;
+}
+
+function buildBootWordPattern(word = "AAMS") {
+  const lines = composeWordLines(word);
+  const rows = lines.length;
+  const cols = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  const scale = Math.max(2, Math.floor(Math.min(DOT_ROWS / (rows + 4), DOT_COLS / (cols + 4))));
+  const offsetRow = Math.floor((DOT_ROWS - rows * scale) / 2);
+  const offsetCol = Math.floor((DOT_COLS - cols * scale) / 2);
+  const on = new Set();
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const char = lines[r][c] || " ";
+      if (char !== "#") continue;
+      for (let sr = 0; sr < scale; sr += 1) {
+        for (let sc = 0; sc < scale; sc += 1) {
+          const rr = offsetRow + r * scale + sr;
+          const cc = offsetCol + c * scale + sc;
+          if (rr >= 0 && rr < DOT_ROWS && cc >= 0 && cc < DOT_COLS) {
+            on.add(idx(rr, cc));
+          }
+        }
+      }
+    }
+  }
+  return { on, accent: new Set() };
+}
+
 async function playBootSequence() {
   if (screenEl) screenEl.dataset.scene = "boot";
   if (gridEl) gridEl.classList.add("is-boot");
-  setStatus("웨이크업", "에너지 주입");
-  randomScatter(Math.floor(DOT_COUNT * 0.18));
-  await wait(380);
+  setStatus("웨이크업", "시스템 점화");
+  randomScatter(Math.floor(DOT_COUNT * 0.12));
+  await wait(220);
   setStatus("웨이크업", "신호 정렬");
-  randomScatter(Math.floor(DOT_COUNT * 0.48));
-  await wait(420);
-  setStatus("웨이크업", "형상 구축");
-  randomScatter(Math.floor(DOT_COUNT * 0.72));
-  await wait(420);
+  randomScatter(Math.floor(DOT_COUNT * 0.2));
+  await wait(220);
+  const wordPattern = buildBootWordPattern();
+  setStatus("웨이크업", "AAMS 온라인");
+  await revealPattern(wordPattern, { steps: 16, delay: 42 });
+  await wait(260);
+  renderPattern(wordPattern);
+  await wait(240);
+  randomScatter(Math.floor(DOT_COUNT * 0.08));
+  await wait(180);
   applyExpression("blink");
-  await wait(300);
+  await wait(260);
   if (gridEl) gridEl.classList.remove("is-boot");
   if (screenEl) screenEl.dataset.scene = "active";
   setBaseExpression("idle");
-  setStatus("준비", "웨이크업 완료");
+  setStatus("준비", "임무 대기");
   startAmbientAnimations();
 }
 
@@ -561,16 +662,18 @@ async function powerDownAndExit({ immediate = false } = {}) {
 
   if (!immediate) {
     setStatus("종료", "안전 절차 진행");
-    playMicroExpression("blink", 320);
-    await wait(360);
+    playMicroExpression("blink", 260);
+    await wait(260);
     setBaseExpression("sleep");
-    await wait(320);
-    randomScatter(Math.floor(DOT_COUNT * 0.32));
-    await wait(200);
-    randomScatter(Math.floor(DOT_COUNT * 0.12));
-    await wait(200);
+    applyExpression("sleep");
+    await wait(220);
+    const wordPattern = buildBootWordPattern();
+    await revealPattern(wordPattern, { steps: 12, delay: 44 });
+    await wait(240);
+    await dissolvePattern(wordPattern, { steps: 10, delay: 48, scatterRatio: 0.08 });
+    await wait(220);
     randomScatter(0);
-    await wait(200);
+    await wait(160);
   }
 
   try {
@@ -581,7 +684,7 @@ async function powerDownAndExit({ immediate = false } = {}) {
   location.hash = "#/user";
 }
 
-function enableExit({ label = "사용자 페이지로 돌아가기", autoDelay = 45000 } = {}) {
+function enableExit({ label = "사용자 페이지로 돌아가기", autoDelay = 90000 } = {}) {
   if (!exitBtn) return;
   exitBtn.hidden = false;
   exitBtn.disabled = false;
@@ -616,7 +719,7 @@ async function handleFailure(context, title, error, { stage = "dispatch-failed",
     invalidateRequestDetail(current.requestId);
   }
 
-  enableExit({ autoDelay: 45000 });
+  enableExit({ autoDelay: 90000 });
 }
 
 function extractErrorMessage(err) {
@@ -739,7 +842,6 @@ function createExpression({
   rightEye = "open",
   leftPupil = "center",
   rightPupil = "center",
-  mouth = "neutral",
   extras = []
 } = {}) {
   const on = new Set();
@@ -756,8 +858,6 @@ function createExpression({
   mergeInto(accent, rightPupilPixels);
   mergeInto(on, leftPupilPixels);
   mergeInto(on, rightPupilPixels);
-
-  mergeInto(on, buildMouth(mouth));
 
   const extraList = Array.isArray(extras) ? extras : [extras];
   extraList.forEach((extra) => {
@@ -777,78 +877,51 @@ function buildEye(anchor, mode = "open") {
   if (mode === "closed") {
     return rectCoords(row + Math.floor(EYE_HEIGHT / 2), col, 1, EYE_WIDTH);
   }
-  if (mode === "narrow") {
-    return [
-      ...rectCoords(row + 1, col + 1, 1, EYE_WIDTH - 2),
-      ...rectCoords(row + 2, col, 1, EYE_WIDTH),
-      ...rectCoords(row + 3, col + 1, 1, EYE_WIDTH - 2)
-    ];
-  }
+  let height = EYE_HEIGHT;
+  let top = row;
+  let verticalScale = 1;
   if (mode === "soft") {
-    return [
-      ...rectCoords(row, col + 1, 1, EYE_WIDTH - 2),
-      ...rectCoords(row + 1, col, 1, EYE_WIDTH),
-      ...rectCoords(row + 2, col, 1, EYE_WIDTH),
-      ...rectCoords(row + 3, col + 1, 1, EYE_WIDTH - 2)
-    ];
+    height = Math.max(6, Math.floor(EYE_HEIGHT * 0.85));
+    top = row + Math.floor((EYE_HEIGHT - height) / 2);
+    verticalScale = 1.15;
+  } else if (mode === "narrow") {
+    height = Math.max(4, Math.floor(EYE_HEIGHT * 0.55));
+    top = row + Math.floor((EYE_HEIGHT - height) / 2);
+    verticalScale = 0.85;
   }
-  return [
-    ...rectCoords(row, col + 1, 1, EYE_WIDTH - 2),
-    ...rectCoords(row + 1, col, 1, EYE_WIDTH),
-    ...rectCoords(row + 2, col, 1, EYE_WIDTH),
-    ...rectCoords(row + 3, col, 1, EYE_WIDTH),
-    ...rectCoords(row + 4, col + 1, 1, EYE_WIDTH - 2)
-  ];
+  return ellipseIndices(top, col, EYE_WIDTH, height, { verticalScale });
+}
+
+function ellipseIndices(top, col, width, height, { verticalScale = 1 } = {}) {
+  const coords = [];
+  const rx = width / 2;
+  const ry = height / 2;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const normX = (x + 0.5 - rx) / rx;
+      const normY = (y + 0.5 - ry) / (ry * verticalScale || 1);
+      if (normX * normX + normY * normY <= 1) {
+        const rr = top + y;
+        const cc = col + x;
+        if (rr >= 0 && rr < DOT_ROWS && cc >= 0 && cc < DOT_COLS) {
+          coords.push(idx(rr, cc));
+        }
+      }
+    }
+  }
+  return coords;
 }
 
 function buildPupil(anchor, direction = "center") {
   const { row, col } = anchor;
   if (direction === "none") return [];
-  const width = 2;
-  const height = 2;
-  const centerRow = row + 2;
-  const centerCol = col + Math.floor((EYE_WIDTH - width) / 2);
+  const centerRow = row + Math.floor(EYE_HEIGHT / 2) - Math.floor(PUPIL_HEIGHT / 2);
+  const centerCol = col + Math.floor((EYE_WIDTH - PUPIL_WIDTH) / 2);
   let targetRow = centerRow;
   let targetCol = centerCol;
-  if (direction === "left") targetCol = col + 1;
-  if (direction === "right") targetCol = col + EYE_WIDTH - width - 1;
-  if (direction === "up") targetRow = row + 1;
-  if (direction === "down") targetRow = row + 3;
-  return rectCoords(targetRow, targetCol, height, width);
-}
-
-function buildMouth(mode = "neutral") {
-  const { row, col } = MOUTH;
-  const width = MOUTH_WIDTH;
-  if (mode === "smile") {
-    return [
-      ...rectCoords(row, col + 1, 1, width - 2),
-      ...coordsIndices([
-        [row - 1, col + 1],
-        [row - 1, col + width - 2]
-      ])
-    ];
-  }
-  if (mode === "soft-smile") {
-    return [
-      ...rectCoords(row, col + 3, 1, width - 6),
-      ...coordsIndices([
-        [row - 1, col + 3],
-        [row - 1, col + width - 4]
-      ])
-    ];
-  }
-  if (mode === "frown") {
-    return [
-      ...rectCoords(row, col + 1, 1, width - 2),
-      ...coordsIndices([
-        [row + 1, col + 1],
-        [row + 1, col + width - 2]
-      ])
-    ];
-  }
-  if (mode === "open") {
-    return rectCoords(row - 1, col + Math.floor((width - 3) / 2), 3, 3);
-  }
-  return rectCoords(row, col + 1, 1, width - 2);
+  if (direction === "left") targetCol = col + 2;
+  if (direction === "right") targetCol = col + EYE_WIDTH - PUPIL_WIDTH - 2;
+  if (direction === "up") targetRow = row + 2;
+  if (direction === "down") targetRow = row + EYE_HEIGHT - PUPIL_HEIGHT - 2;
+  return rectCoords(targetRow, targetCol, PUPIL_HEIGHT, PUPIL_WIDTH);
 }
