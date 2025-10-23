@@ -3,7 +3,8 @@ import {
   fetchMyPendingApprovals,
   executeRequest as postExecuteRequest,
   fetchRequestDetail,
-  markDispatchFailure
+  markDispatchFailure,
+  completeExecution
 } from "./api.js";
 import { getMe, renderMeBrief, mountMobileHeader, getFpLocalBase } from "./util.js";
 
@@ -407,10 +408,11 @@ function wire(rows = [], me = null, { container = document } = {}) {
 
         const localPayload = serverResult?.payload;
         const requiresManual = !!(localPayload && serverResult?.bridge?.manualRequired !== false);
+        let localResult = null;
         if (requiresManual && localPayload) {
           if (label) label.textContent = "로컬 전송중…"; else btn.textContent = "로컬 전송중…";
           try {
-            await dispatchRobotViaLocal(localPayload);
+            localResult = await dispatchRobotViaLocal(localPayload);
           } catch (localError) {
             const reasonMessage = `로컬 브릿지 오류: ${localError?.message || localError || '알 수 없는 오류'}`;
             try {
@@ -420,6 +422,36 @@ function wire(rows = [], me = null, { container = document } = {}) {
             }
             throw new Error(reasonMessage);
           }
+          const job = localResult?.job;
+          const jobStatus = String(job?.status || '').toLowerCase();
+          if (jobStatus && jobStatus !== 'succeeded') {
+            const reasonMessage = job?.message || job?.error || '장비 제어 실패';
+            try {
+              await markDispatchFailure({ requestId: requestIdStr, reason: reasonMessage, actorId: executor?.id });
+            } catch (reportError) {
+              console.warn("[AAMS][user] 로컬 브릿지 실패 보고 실패", reportError);
+            }
+            throw new Error(reasonMessage);
+          }
+
+          const completionMessage = job?.message
+            || (job?.summary?.actionLabel && job?.summary?.includes?.label
+              ? `${job.summary.actionLabel} ${job.summary.includes.label}`
+              : "장비 제어가 정상적으로 완료되었습니다.");
+
+          try {
+            await completeExecution({
+              requestId: requestIdStr,
+              actorId: executor?.id,
+              eventId: serverResult?.event_id,
+              result: job,
+              statusReason: completionMessage
+            });
+          } catch (completeError) {
+            console.warn("[AAMS][user] 집행 완료 보고 실패", completeError);
+            throw new Error(completeError?.message || "집행 완료 처리 실패");
+          }
+
         }
 
         if (label) label.textContent = "완료"; else btn.textContent = "완료";
@@ -888,7 +920,7 @@ function joinLocalUrl(base, path) {
   return cleanBase.replace(/\/+$/, "") + path;
 }
 
-async function dispatchRobotViaLocal(payload, { timeoutMs = 8000 } = {}) {
+async function dispatchRobotViaLocal(payload, { timeoutMs = 90000 } = {}) {
   if (!payload || typeof payload !== "object") {
     throw new Error("장비 명령 데이터가 없습니다.");
   }
@@ -907,8 +939,9 @@ async function dispatchRobotViaLocal(payload, { timeoutMs = 8000 } = {}) {
     });
     let data = null;
     try { data = await res.json(); } catch (_) { data = null; }
-    if (!res.ok || (data && data.ok === false)) {
-      const reason = data?.error || data?.message || `HTTP ${res.status}`;
+    const ok = data?.ok !== false && res.ok;
+    if (!ok) {
+      const reason = data?.error || data?.job?.message || data?.job?.error || `HTTP ${res.status}`;
       throw new Error(reason);
     }
     return data;

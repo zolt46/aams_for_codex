@@ -96,6 +96,15 @@ export async function markDispatchFailure({ requestId, reason, actorId }) {
   return _post(`${apiBase()}/api/requests/${encodeURIComponent(requestId)}/dispatch_fail`, body);
 }
 
+export async function completeExecution({ requestId, actorId, eventId, result, statusReason }) {
+  const body = {};
+  if (actorId) body.actor_id = actorId;
+  if (eventId) body.event_id = eventId;
+  if (result) body.result = result;
+  if (statusReason) body.status_reason = statusReason;
+  return _post(`${apiBase()}/api/requests/${encodeURIComponent(requestId)}/execute_complete`, body);
+}
+
 /** =========================
  * 관리자 승인/거부/재오픈
  * ========================= */

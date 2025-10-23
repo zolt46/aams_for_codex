@@ -175,6 +175,14 @@ function summarizeRobotPayload(payload = {}){
     ammoIncluded = (Array.isArray(payload.ammo) && payload.ammo.length > 0)
       || (Array.isArray(dispatch.ammo) && dispatch.ammo.length > 0);
   }
+  
+  const payloadItems = Array.isArray(payload.items) ? payload.items : [];
+  if (firearmIncluded === undefined) {
+    firearmIncluded = payloadItems.some((item) => String(item?.item_type || item?.type || '').toUpperCase() === 'FIREARM');
+  }
+  if (ammoIncluded === undefined) {
+    ammoIncluded = payloadItems.some((item) => String(item?.item_type || item?.type || '').toUpperCase() === 'AMMO');
+  }
 
   const firearmHas = !!firearmIncluded;
   const ammoHas = !!ammoIncluded;
@@ -490,8 +498,20 @@ function recordRobotHistory(job){
   }
 }
 
+function getForwardConfig(job){
+  if (job?.forward && job.forward.url) {
+    robotForwardStatus.enabled = true;
+    return job.forward;
+  }
+  if (ROBOT_FORWARD_URL) {
+    return { url: ROBOT_FORWARD_URL, token: ROBOT_FORWARD_TOKEN || null };
+  }
+  return null;
+}
+
 function forwardRobotEvent(job, update = {}){
-  if (!robotForwardStatus.enabled) return;
+  const forward = getForwardConfig(job);
+  if (!forward || !forward.url) return;
   const payload = {
     channel: 'robot',
     site: job?.site || FP_SITE,
@@ -510,7 +530,7 @@ function forwardRobotEvent(job, update = {}){
       meta: update.meta || job?.payloadPreview || null
     }
   };
-  forwardToRender(payload, { url: ROBOT_FORWARD_URL, token: ROBOT_FORWARD_TOKEN, statusRef: robotForwardStatus });
+  forwardToRender(payload, { url: forward.url, token: forward.token || null, statusRef: robotForwardStatus });
 }
 
 function finalizeRobotJob(job, status, info = {}){
@@ -544,6 +564,15 @@ function finalizeRobotJob(job, status, info = {}){
     progress: job.progress,
     meta: info.result || info.meta || info
   });
+  if (Array.isArray(job.waiters) && job.waiters.length) {
+    const snapshot = sanitizeRobotJob(job, { includePayload: true });
+    const waiters = job.waiters.splice(0);
+    job.waiters = [];
+    waiters.forEach(({ resolve }) => {
+      try { resolve(snapshot); }
+      catch (_) {}
+    });
+  }
 }
 
 function handleRobotStdout(job, line){
@@ -600,6 +629,20 @@ function handleRobotStdout(job, line){
   job.logs?.push?.({ type: 'stdout', text: line, at: timeNow() });
 }
 
+function extractForwardConfig(raw){
+  if (raw && typeof raw === 'object') {
+    const url = typeof raw.url === 'string' ? raw.url.trim() : null;
+    const token = typeof raw.token === 'string' ? raw.token.trim() : null;
+    if (url) {
+      return { url, token: token || null };
+    }
+  }
+  if (ROBOT_FORWARD_URL) {
+    return { url: ROBOT_FORWARD_URL, token: ROBOT_FORWARD_TOKEN || null };
+  }
+  return null;
+}
+
 function startRobotJob(payload = {}){
   if (!robotState.enabled){
     const err = new Error('robot_disabled');
@@ -628,6 +671,7 @@ function startRobotJob(payload = {}){
   const summary = summarizeRobotPayload(payload);
   const site = payload.site || payload.site_id || payload.dispatch?.site_id || FP_SITE;
   const payloadPreview = buildRobotPayloadSnapshot(payload);
+  const forward = extractForwardConfig(payload.forward);
   const job = {
     id: jobId,
     requestId,
@@ -639,7 +683,9 @@ function startRobotJob(payload = {}){
     status: 'starting',
     stage: 'starting',
     createdAt: timeNow(),
-    logs: []
+    logs: [],
+    forward,
+    waiters: []
   };
 
     if (summary){
@@ -727,7 +773,29 @@ function startRobotJob(payload = {}){
     });
   });
 
-  return sanitizeRobotJob(job, { includePayload: false });
+  return job;
+}
+
+function waitForRobotJob(job, { timeoutMs = 120000 } = {}) {
+  if (!job) {
+    return Promise.reject(new Error('job_missing'));
+  }
+  if (job.finishedAt) {
+    return Promise.resolve(sanitizeRobotJob(job, { includePayload: true }));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const snapshot = sanitizeRobotJob(job, { includePayload: true });
+      reject(Object.assign(new Error('robot_timeout'), { job: snapshot }));
+    }, timeoutMs);
+    const resolver = resolve;
+    job.waiters.push({
+      resolve(value) {
+        clearTimeout(timer);
+        resolver(value);
+      }
+    });
+  });
 }
 
 
@@ -1055,15 +1123,35 @@ async function handleHttpRequest(req, res){
     if (req.method === 'POST' && pathname === '/robot/execute'){
       const body = await readJson(req);
       const job = startRobotJob(body || {});
-      return sendJson(res, 200, {
-        ok: true,
-        job,
-        robot: {
-          enabled: robotState.enabled,
-          script: robotState.script,
-          python: robotState.python
-        }
-      });
+      try {
+        const result = await waitForRobotJob(job, {
+          timeoutMs: Number(body?.timeoutMs || body?.timeout_ms || 0) || 120000
+        });
+        const status = String(result?.status || '').toLowerCase();
+        const success = status === 'succeeded';
+        return sendJson(res, success ? 200 : 500, {
+          ok: success,
+          job: result,
+          robot: {
+            enabled: robotState.enabled,
+            script: robotState.script,
+            python: robotState.python
+          }
+        });
+      } catch (err) {
+        const statusCode = err?.statusCode || 504;
+        const snapshot = err?.job || sanitizeRobotJob(job, { includePayload: true });
+        return sendJson(res, statusCode, {
+          ok: false,
+          error: err?.message || 'robot_failed',
+          job: snapshot,
+          robot: {
+            enabled: robotState.enabled,
+            script: robotState.script,
+            python: robotState.python
+          }
+        });
+      }
     }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (err) {
