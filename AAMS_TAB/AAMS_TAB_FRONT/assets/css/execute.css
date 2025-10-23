@@ -26,21 +26,21 @@
 
 .execute-status {
   position: absolute;
-  top: clamp(36px, 9vh, 120px);
+  top: clamp(28px, 7vh, 88px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(92vw, 720px);
+  width: min(88vw, 680px);
   padding: 0;
   border: 0;
   border-radius: 0;
   background: none;
   text-align: center;
-  font-size: clamp(1.1rem, 3vw, 1.8rem);
+  font-size: clamp(1.2rem, 3.2vw, 1.9rem);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: inherit;
   white-space: normal;
-  line-height: 1.35;
+  line-height: 1.4;
   pointer-events: none;
   z-index: 4;
 }
@@ -71,29 +71,29 @@
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
-  gap: clamp(0.008rem, 0.12vmin, 0.03rem);
-  padding: clamp(8px, 4vw, 32px);
+  gap: clamp(0.002rem, 0.08vmin, 0.016rem);
+  padding: clamp(12px, 5vw, 40px);
 }
 
 .execute-dot {
   width: 100%;
   aspect-ratio: 1;
   border-radius: 0;
-  background: rgba(8, 24, 24, 0.82);
-  transform: scale(0.88);
-  opacity: 0.05;
-  transition: opacity 160ms ease, transform 200ms ease, background 220ms ease;
+  background: #020808;
+  transform: scale(0.6);
+  opacity: 0.04;
+  transition: opacity 180ms ease, transform 240ms ease, background 240ms ease;
 }
 
 .execute-dot.is-on {
-  opacity: 0.86;
-  transform: scale(0.98);
-  background: #15524a;
+  opacity: 0.82;
+  transform: scale(0.82);
+  background: #0f4039;
 }
 
 .execute-dot.is-accent {
-  opacity: 1;
-  background: #7ff4dc;
+  opacity: 0.96;
+  background: #5be4cb;
 }
 
 .execute-dot-grid.is-boot .execute-dot.is-on {

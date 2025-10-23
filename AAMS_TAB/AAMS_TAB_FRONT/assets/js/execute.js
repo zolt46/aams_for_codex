@@ -18,13 +18,36 @@ const DOT_ROWS = 48;
 const DOT_COLS = 80;
 const DOT_COUNT = DOT_ROWS * DOT_COLS;
 
-const EYE_WIDTH = 12;
-const EYE_HEIGHT = 12;
-const EYE_ROW = 14;
-const LEFT_EYE_COL = 18;
+const EYE_WIDTH = 24;
+const EYE_HEIGHT = 24;
+const EYE_ROW = 10;
+const LEFT_EYE_COL = 8;
 const RIGHT_EYE_COL = DOT_COLS - LEFT_EYE_COL - EYE_WIDTH;
-const PUPIL_WIDTH = 3;
-const PUPIL_HEIGHT = 3;
+const PUPIL_WIDTH = 6;
+const PUPIL_HEIGHT = 6;
+
+const BOOT_TIMING = {
+  scatterIntro: 360,
+  scatterAlign: 420,
+  revealSteps: 22,
+  revealDelay: 60,
+  holdWord: 420,
+  disperseDelay: 320,
+  blink: 360,
+  settle: 420
+};
+
+const SHUTDOWN_TIMING = {
+  blink: 360,
+  settle: 360,
+  revealSteps: 18,
+  revealDelay: 60,
+  holdWord: 380,
+  dissolveSteps: 14,
+  dissolveDelay: 60,
+  scatterDelay: 320,
+  finalPause: 280
+};
 
 const WAITING_MESSAGES = [
   "경로 확보 중",
@@ -69,12 +92,14 @@ const LETTER_TEMPLATES = {
 };
 
 function buildSparkleExtra() {
+  const offset = Math.max(2, Math.floor(EYE_HEIGHT * 0.4));
   const coords = [
-    [EYE_ROW - 3, LEFT_EYE_COL - 4],
-    [EYE_ROW - 2, LEFT_EYE_COL - 1],
-    [EYE_ROW - 4, RIGHT_EYE_COL + EYE_WIDTH + 2],
-    [EYE_ROW - 3, RIGHT_EYE_COL + EYE_WIDTH + 4],
-    [EYE_ROW - 2, RIGHT_EYE_COL + EYE_WIDTH + 1]
+    [EYE_ROW - offset, LEFT_EYE_COL - 3],
+    [EYE_ROW - Math.floor(offset * 0.7), LEFT_EYE_COL - 5],
+    [EYE_ROW - Math.floor(offset * 0.5), LEFT_EYE_COL - 2],
+    [EYE_ROW - offset, RIGHT_EYE_COL + EYE_WIDTH + 3],
+    [EYE_ROW - Math.floor(offset * 0.7), RIGHT_EYE_COL + EYE_WIDTH + 5],
+    [EYE_ROW - Math.floor(offset * 0.5), RIGHT_EYE_COL + EYE_WIDTH + 2]
   ];
   return {
     points: coordsIndices(coords),
@@ -625,21 +650,24 @@ async function playBootSequence() {
   if (screenEl) screenEl.dataset.scene = "boot";
   if (gridEl) gridEl.classList.add("is-boot");
   setStatus("웨이크업", "시스템 점화");
-  randomScatter(Math.floor(DOT_COUNT * 0.12));
-  await wait(220);
+  randomScatter(Math.floor(DOT_COUNT * 0.08));
+  await wait(BOOT_TIMING.scatterIntro);
   setStatus("웨이크업", "신호 정렬");
-  randomScatter(Math.floor(DOT_COUNT * 0.2));
-  await wait(220);
+  randomScatter(Math.floor(DOT_COUNT * 0.12));
+  await wait(BOOT_TIMING.scatterAlign);
   const wordPattern = buildBootWordPattern();
   setStatus("웨이크업", "AAMS 온라인");
-  await revealPattern(wordPattern, { steps: 16, delay: 42 });
-  await wait(260);
+  await revealPattern(wordPattern, {
+    steps: BOOT_TIMING.revealSteps,
+    delay: BOOT_TIMING.revealDelay
+  });
+  await wait(BOOT_TIMING.holdWord);
   renderPattern(wordPattern);
-  await wait(240);
-  randomScatter(Math.floor(DOT_COUNT * 0.08));
-  await wait(180);
+  await wait(BOOT_TIMING.settle);
+  randomScatter(Math.floor(DOT_COUNT * 0.06));
+  await wait(BOOT_TIMING.disperseDelay);
   applyExpression("blink");
-  await wait(260);
+  await wait(BOOT_TIMING.blink);
   if (gridEl) gridEl.classList.remove("is-boot");
   if (screenEl) screenEl.dataset.scene = "active";
   setBaseExpression("idle");
@@ -662,18 +690,25 @@ async function powerDownAndExit({ immediate = false } = {}) {
 
   if (!immediate) {
     setStatus("종료", "안전 절차 진행");
-    playMicroExpression("blink", 260);
+    await wait(SHUTDOWN_TIMING.blink);
     await wait(260);
     setBaseExpression("sleep");
     applyExpression("sleep");
-    await wait(220);
+    await wait(SHUTDOWN_TIMING.settle);
     const wordPattern = buildBootWordPattern();
-    await revealPattern(wordPattern, { steps: 12, delay: 44 });
-    await wait(240);
-    await dissolvePattern(wordPattern, { steps: 10, delay: 48, scatterRatio: 0.08 });
-    await wait(220);
+    await revealPattern(wordPattern, {
+      steps: SHUTDOWN_TIMING.revealSteps,
+      delay: SHUTDOWN_TIMING.revealDelay
+    });
+    await wait(SHUTDOWN_TIMING.holdWord);
+    await dissolvePattern(wordPattern, {
+      steps: SHUTDOWN_TIMING.dissolveSteps,
+      delay: SHUTDOWN_TIMING.dissolveDelay,
+      scatterRatio: 0.06
+    });
+    await wait(SHUTDOWN_TIMING.scatterDelay);
     randomScatter(0);
-    await wait(160);
+    await wait(SHUTDOWN_TIMING.finalPause);
   }
 
   try {
