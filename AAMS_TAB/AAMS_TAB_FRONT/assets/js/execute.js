@@ -14,24 +14,72 @@ import {
   clearExecuteContext
 } from "./execute_context.js";
 
-const DOT_ROWS = 28;
-const DOT_COLS = 48;
+const DOT_ROWS = 36;
+const DOT_COLS = 64;
 const DOT_COUNT = DOT_ROWS * DOT_COLS;
 
-const EYE_WIDTH = 8;
-const EYE_HEIGHT = 5;
-const EYE_ROW = 8;
-const LEFT_EYE_COL = 10;
+const EYE_WIDTH = 12;
+const EYE_HEIGHT = 6;
+const EYE_ROW = 10;
+const LEFT_EYE_COL = 14;
 const RIGHT_EYE_COL = DOT_COLS - LEFT_EYE_COL - EYE_WIDTH;
-const MOUTH_WIDTH = 14;
-const MOUTH_ROW = 19;
+const MOUTH_WIDTH = 22;
+const MOUTH_ROW = 26;
 const MOUTH_COL = Math.floor((DOT_COLS - MOUTH_WIDTH) / 2);
 
 const WAITING_MESSAGES = [
-  "경로 확보",
-  "안전 점검",
-  "전달 준비"
+  "경로 확보 중",
+  "안전 점검 중",
+  "전달 시퀀스 준비",
+  "시각 검증 준비"
 ];
+
+const FAILURE_STAGES = new Set([
+  "dispatch-failed",
+  "execution-failed",
+  "report-failed",
+  "invalid",
+  "missing"
+]);
+
+function buildHatBandExtra() {
+  const bandRow = Math.max(0, EYE_ROW - 6);
+  const width = (RIGHT_EYE_COL + EYE_WIDTH) - LEFT_EYE_COL;
+  return {
+    points: [
+      ...rectCoords(bandRow, LEFT_EYE_COL - 3, 1, width + 6),
+      ...rectCoords(bandRow + 1, LEFT_EYE_COL - 2, 1, width + 4)
+    ]
+  };
+}
+
+function buildSaluteHandExtra() {
+  const startRow = EYE_ROW + 1;
+  const startCol = RIGHT_EYE_COL + EYE_WIDTH - 3;
+  return {
+    points: [
+      ...rectCoords(startRow - 1, startCol + 1, 1, 3),
+      ...rectCoords(startRow, startCol, 1, 5),
+      ...rectCoords(startRow + 1, startCol + 1, 1, 4),
+      ...rectCoords(startRow + 2, startCol + 2, 1, 3)
+    ]
+  };
+}
+
+function buildSparkleExtra() {
+  const coords = [
+    [EYE_ROW - 6, LEFT_EYE_COL - 3],
+    [EYE_ROW - 5, LEFT_EYE_COL - 5],
+    [EYE_ROW - 4, LEFT_EYE_COL - 2],
+    [EYE_ROW - 6, RIGHT_EYE_COL + EYE_WIDTH + 3],
+    [EYE_ROW - 5, RIGHT_EYE_COL + EYE_WIDTH + 5],
+    [EYE_ROW - 4, RIGHT_EYE_COL + EYE_WIDTH + 2]
+  ];
+  return {
+    points: coordsIndices(coords),
+    accent: true
+  };
+}
 
 const STAGE_BASE_EXPRESSION = {
   queued: "focus",
@@ -59,17 +107,29 @@ const EXPRESSIONS = {
   determined: createExpression({ leftEye: "narrow", rightEye: "narrow", leftPupil: "center", rightPupil: "center", mouth: "soft-smile" }),
   lookLeft: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "left", rightPupil: "left", mouth: "soft-smile" }),
   lookRight: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "right", rightPupil: "right", mouth: "soft-smile" }),
+  lookUp: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "up", rightPupil: "up", mouth: "neutral" }),
+  lookDown: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "down", rightPupil: "down", mouth: "soft-smile" }),
   blink: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "neutral" }),
   wink: createExpression({ leftEye: "open", rightEye: "closed", leftPupil: "center", rightPupil: "none", mouth: "soft-smile" }),
+  winkLeft: createExpression({ leftEye: "closed", rightEye: "open", leftPupil: "none", rightPupil: "center", mouth: "soft-smile" }),
+  grin: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "open" }),
   smile: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "smile" }),
   calm: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center", mouth: "neutral" }),
   sad: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "center", rightPupil: "center", mouth: "frown" }),
+  sparkle: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "soft-smile", extras: [buildSparkleExtra()] }),
+  proud: createExpression({ leftEye: "soft", rightEye: "soft", leftPupil: "up", rightPupil: "up", mouth: "smile", extras: [buildHatBandExtra()] }),
+  salute: createExpression({ leftEye: "soft", rightEye: "open", leftPupil: "center", rightPupil: "up", mouth: "smile", extras: [buildHatBandExtra(), buildSaluteHandExtra()] }),
   surprised: createExpression({ leftEye: "open", rightEye: "open", leftPupil: "center", rightPupil: "center", mouth: "open" })
 };
 
 
 const EXPRESSION_ALIASES = {
-  happy: "smile"
+  happy: "smile",
+  success: "smile",
+  celebrate: "salute",
+  saluting: "salute",
+  proud: "proud",
+  sparkle: "sparkle"
 };
 
 let screenEl;
@@ -103,6 +163,8 @@ export async function initExecutionPage() {
   }
 
   if (exitBtn) {
+    exitBtn.hidden = true;
+    exitBtn.disabled = false;
     exitBtn.addEventListener("click", () => {
       powerDownAndExit();
     });
@@ -257,9 +319,18 @@ function updateStage(stageKey, label, message, { level = "info", expression } = 
     stopAmbientMessages();
   }
   setStatus(label, message, level);
+  if (stageKey === "completed") {
+    playCelebrationSequence();
+    return;
+  }
+  if (FAILURE_STAGES.has(stageKey)) {
+    stopAmbientAnimations();
+  } else {
+    startAmbientAnimations();
+  }
 }
 
-const MAX_STATUS_LENGTH = 120;
+const MAX_STATUS_LENGTH = 160;
 
 function normalizeText(value) {
   if (value === null || value === undefined) return "";
@@ -289,10 +360,19 @@ function setAmbientText(text) {
 
 function applyStatus() {
   if (!statusEl) return;
-  const full = ambientMessage || statusMessage || statusLabel;
-  const display = truncateStatus(full) || "\u00A0";
+  let full = "";
+  if (ambientMessage) {
+    full = ambientMessage;
+  } else {
+    const parts = [];
+    if (statusLabel) parts.push(statusLabel);
+    if (statusMessage && statusMessage !== statusLabel) parts.push(statusMessage);
+    full = parts.join(" · ");
+  }
+  const safe = full || "\u00A0";
+  const display = truncateStatus(safe);
   statusEl.textContent = display;
-  statusEl.title = full || "";
+  statusEl.title = safe === "\u00A0" ? "" : safe;
 }
 function startAmbientMessages(messages) {
   stopAmbientMessages();
@@ -341,13 +421,30 @@ function stopAmbientAnimations() {
   }
 }
 
+function playCelebrationSequence() {
+  stopAmbientAnimations();
+  const fallback = resolveExpressionName(baseExpression === "sad" ? "smile" : baseExpression || "smile");
+  applyExpression("salute");
+  setTimeout(() => {
+    setBaseExpression(fallback);
+    applyExpression(fallback);
+    if (!FAILURE_STAGES.has(currentStageKey)) {
+      startAmbientAnimations();
+      setTimeout(() => {
+        playMicroExpression("wink", 260);
+      }, 600);
+    }
+  }, 1400);
+}
+
 function pickAmbientExpressions() {
   const base = baseExpression;
   if (base === "sleep") return [];
-  if (base === "sad") return ["blink", "lookLeft", "lookRight"];
-  if (base === "smile") return ["blink", "wink", "lookLeft", "lookRight"];
-  if (base === "determined" || base === "focus") return ["blink", "lookLeft", "lookRight"];
-  return ["blink", "lookLeft", "lookRight", "wink"];
+  if (base === "sad") return ["blink", "lookLeft", "lookRight", "lookDown"];
+  if (base === "smile") return ["blink", "wink", "winkLeft", "lookLeft", "lookRight", "sparkle"];
+  if (base === "determined" || base === "focus") return ["blink", "lookLeft", "lookRight", "lookUp"];
+  if (base === "calm") return ["blink", "lookLeft", "lookRight", "lookDown"];
+  return ["blink", "lookLeft", "lookRight", "wink", "winkLeft", "lookUp", "lookDown", "sparkle", "proud"];
 }
 
 function playMicroExpression(name, duration = 400) {
@@ -606,12 +703,44 @@ function coordsIndices(points) {
   return coords;
 }
 
+function normalizeExtra(extra) {
+  if (!extra) return null;
+  if (Array.isArray(extra)) {
+    if (!extra.length) return null;
+    const points = [];
+    extra.forEach((value) => {
+      if (typeof value === "number") {
+        if (value >= 0 && value < DOT_COUNT) points.push(value);
+      } else if (Array.isArray(value) && value.length >= 2) {
+        points.push(...coordsIndices([value]));
+      }
+    });
+    return points.length ? { points, accent: false } : null;
+  }
+  if (typeof extra === "object") {
+    if (Array.isArray(extra.points)) {
+      const filtered = extra.points.filter((value) => typeof value === "number" && value >= 0 && value < DOT_COUNT);
+      if (filtered.length) {
+        return { points: filtered, accent: !!extra.accent };
+      }
+    }
+    if (Array.isArray(extra.coords)) {
+      const converted = coordsIndices(extra.coords);
+      if (converted.length) {
+        return { points: converted, accent: !!extra.accent };
+      }
+    }
+  }
+  return null;
+}
+
 function createExpression({
   leftEye = "open",
   rightEye = "open",
   leftPupil = "center",
   rightPupil = "center",
-  mouth = "neutral"
+  mouth = "neutral",
+  extras = []
 } = {}) {
   const on = new Set();
   const accent = new Set();
@@ -629,6 +758,16 @@ function createExpression({
   mergeInto(on, rightPupilPixels);
 
   mergeInto(on, buildMouth(mouth));
+
+  const extraList = Array.isArray(extras) ? extras : [extras];
+  extraList.forEach((extra) => {
+    const normalized = normalizeExtra(extra);
+    if (!normalized) return;
+    mergeInto(on, normalized.points);
+    if (normalized.accent) {
+      mergeInto(accent, normalized.points);
+    }
+  });
 
   return Object.freeze({ on, accent });
 }

@@ -7,6 +7,7 @@
 .execute-stage {
   position: fixed;
   inset: 0;
+  min-height: 100vh;
   background: #000;
   color: #7dffe7;
   font-family: "Pretendard", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
@@ -14,7 +15,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(32px, 8vh, 72px);
+  gap: clamp(28px, 7vh, 64px);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -26,24 +27,24 @@
 
 .execute-status {
   position: absolute;
-  top: clamp(28px, 9vh, 120px);
+  top: clamp(36px, 10vh, 120px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(92vw, 720px);
+  width: min(94vw, 760px);
   padding: 0 1rem;
   border: 0;
   border-radius: 0;
   background: none;
   backdrop-filter: none;
   text-align: center;
-  font-size: clamp(1.05rem, 3vw, 1.75rem);
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-size: clamp(1.15rem, 3.2vw, 1.9rem);
+  font-weight: 600;
+  letter-spacing: 0.045em;
   text-transform: none;
   color: inherit;
   white-space: normal;
-  line-height: 1.35;
-  text-shadow: 0 0 18px rgba(108, 255, 228, 0.4);
+  line-height: 1.4;
+  text-shadow: 0 0 26px rgba(108, 255, 228, 0.42);
   pointer-events: none;
   z-index: 4;
 }
@@ -65,45 +66,46 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(8px, 4vw, 32px);
+  padding: clamp(12px, 5vw, 36px);
 }
 
 .execute-dot-grid {
-  --cols: 48;
-  --rows: 28;
-  width: min(96vmin, 96vw);
+  --cols: 64;
+  --rows: 36;
+  width: min(98vmin, 98vw);
   aspect-ratio: calc(var(--cols) / var(--rows));
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
-  gap: clamp(0.05rem, 0.28vmin, 0.18rem);
-  padding: clamp(8px, 3vw, 20px);
+  gap: clamp(0.015rem, 0.16vmin, 0.06rem);
+  padding: clamp(4px, 2.6vw, 24px);
 }
 
 .execute-dot {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 45%;
-  background: rgba(6, 18, 20, 0.6);
-  transform: scale(0.86);
-  opacity: 0.12;
-  transition: opacity 180ms ease, transform 200ms ease, background 200ms ease, box-shadow 260ms ease;
+  border-radius: 0;
+  background: rgba(12, 26, 28, 0.82);
+  transform: scale(0.92);
+  opacity: 0.08;
+  transition: opacity 160ms ease, transform 180ms ease, background 180ms ease, box-shadow 220ms ease, filter 180ms ease;
 }
 
 .execute-dot.is-on {
   opacity: 0.95;
-  transform: scale(1.1);
-  background: radial-gradient(circle at 48% 44%, rgba(200, 255, 244, 0.92), rgba(24, 140, 126, 0.88));
+  transform: scale(1.02);
+  background: linear-gradient(150deg, rgba(140, 255, 233, 0.96), rgba(54, 200, 181, 0.92));
   box-shadow:
-    0 0 10px rgba(120, 255, 228, 0.5),
-    0 0 26px rgba(24, 160, 140, 0.38);
+    0 0 6px rgba(102, 255, 225, 0.55),
+    0 0 18px rgba(32, 160, 142, 0.32);
+  filter: saturate(1.2);
 }
 
 .execute-dot.is-accent {
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.96), rgba(140, 255, 236, 0.92));
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(168, 255, 236, 0.95));
   box-shadow:
-    0 0 18px rgba(140, 255, 236, 0.68),
-    0 0 32px rgba(140, 255, 236, 0.48);
+    0 0 14px rgba(160, 255, 236, 0.68),
+    0 0 28px rgba(160, 255, 236, 0.44);
 }
 
 .execute-dot-grid.is-boot .execute-dot.is-on {

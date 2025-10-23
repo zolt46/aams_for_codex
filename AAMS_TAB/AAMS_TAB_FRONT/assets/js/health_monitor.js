@@ -280,3 +280,17 @@ export function mountStatusMonitor(options = {}) {
     refreshStatusMonitor();
   }
 }
+
+export function unmountStatusMonitor() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  refreshing = false;
+  initialized = false;
+  if (monitorEl && monitorEl.parentNode) {
+    monitorEl.parentNode.removeChild(monitorEl);
+  }
+  monitorEl = null;
+  lastUpdatedEl = null;
+}
