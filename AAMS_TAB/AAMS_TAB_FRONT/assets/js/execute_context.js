@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'AAMS_EXECUTE_CONTEXT';
+let memoryContext = null;
 
 function safeStorage() {
   try {
@@ -67,23 +68,33 @@ function pruneUndefined(obj) {
 
 export function loadExecuteContext() {
   const store = safeStorage();
-  if (!store) return null;
+  if (!store) {
+    return memoryContext;
+  }
   try {
     const raw = store.getItem(STORAGE_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      memoryContext = null;
+      return null;
+    }
     const parsed = JSON.parse(raw);
-    return parsed || null;
+    memoryContext = parsed || null;
+    return memoryContext;
   } catch (err) {
     console.warn('[AAMS][execute] failed to load context:', err?.message || err);
     try { store.removeItem(STORAGE_KEY); } catch (_) {}
+    memoryContext = null;
     return null;
   }
 }
 
 export function setExecuteContext(context) {
-  const store = safeStorage();
-  if (!store) return null;
   const prepared = applyDefaults(context || {});
+  const store = safeStorage();
+  memoryContext = prepared;
+  if (!store) {
+    return prepared;
+  }
   try {
     store.setItem(STORAGE_KEY, JSON.stringify(prepared));
   } catch (err) {
@@ -93,7 +104,7 @@ export function setExecuteContext(context) {
 }
 
 export function updateExecuteContext(updater) {
-  const current = loadExecuteContext() || {};
+  const current = loadExecuteContext() || memoryContext || {};
   const next = typeof updater === 'function'
     ? updater({ ...current })
     : { ...current, ...updater };
@@ -101,6 +112,7 @@ export function updateExecuteContext(updater) {
 }
 
 export function clearExecuteContext() {
+  memoryContext = null;
   const store = safeStorage();
   if (!store) return;
   try { store.removeItem(STORAGE_KEY); } catch (err) {

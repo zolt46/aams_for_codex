@@ -1,90 +1,114 @@
 /* assets/css/execute.css */
 
+:root {
+  color-scheme: only dark;
+}
+
 .execute-stage {
   position: relative;
-  width: 100%;
   min-height: 100dvh;
-  background: #010101;
-  color: #bdf5e6;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  row-gap: clamp(24px, 6vh, 64px);
-  justify-items: center;
+  width: 100%;
+  background: #000;
+  color: #78ffe6;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  align-content: center;
-  padding: clamp(20px, 6vh, 64px) clamp(18px, 6vw, 52px) clamp(28px, 7vh, 72px);
+  justify-content: center;
+  padding: clamp(24px, 6vh, 64px) clamp(18px, 10vw, 96px);
+  gap: clamp(28px, 8vh, 72px);
   overflow: hidden;
+}
+
+.execute-stage::before,
+.execute-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.execute-stage::before {
+  background: radial-gradient(circle at 50% -20%, rgba(30, 255, 216, 0.08), rgba(0, 0, 0, 0.6));
+  opacity: 0.8;
+}
+
+.execute-stage::after {
+  background: radial-gradient(circle at 50% 110%, rgba(12, 120, 110, 0.18), rgba(0, 0, 0, 0.9));
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  transition: opacity 480ms ease;
+}
+
+.execute-stage[data-scene="shutdown"]::after {
+  opacity: 0.1;
 }
 
 .execute-topbar {
   position: relative;
-  width: min(920px, 96vw);
-  min-height: clamp(42px, 6vh, 58px);
-  padding: clamp(8px, 2vh, 14px) clamp(18px, 4vw, 32px);
-  margin: 0 auto;
-  margin-top: clamp(8px, 4vh, 32px);
-  margin-bottom: clamp(20px, 6vh, 56px);
-  border-radius: 999px;
-  border: 1px solid rgba(64, 196, 176, 0.45);
-  background: rgba(8, 52, 46, 0.58);
-  box-shadow: 0 0 40px rgba(26, 180, 160, 0.22);
+  width: min(920px, 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  color: #bdf5e6;
-  letter-spacing: 0.06em;
+  min-height: clamp(38px, 6vh, 54px);
+  padding: clamp(10px, 3vh, 16px) clamp(18px, 10vw, 48px);
+  border-radius: 999px;
+  border: 1px solid rgba(60, 220, 195, 0.5);
+  background: rgba(12, 80, 72, 0.36);
+  box-shadow:
+    0 0 24px rgba(60, 240, 210, 0.18),
+    inset 0 0 24px rgba(6, 40, 36, 0.7);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   font-weight: 600;
+  backdrop-filter: blur(18px);
   z-index: 2;
-  backdrop-filter: blur(12px);
 }
 
 .execute-status {
   margin: 0;
-  font-size: clamp(0.85rem, 1.6vw, 1.05rem);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: clamp(0.78rem, 2.2vw, 1rem);
+  color: inherit;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: min(70vw, 540px);
-  color: inherit;
+  max-width: min(78vw, 540px);
 }
 
 .execute-status[data-level="error"] {
-  color: #ffb3c6;
+  color: #ffb6c6;
 }
 
 .execute-status[data-level="success"] {
-  color: #c0ffe7;
+  color: #d3ffe9;
 }
 
 .execute-exit {
   position: absolute;
-  right: clamp(12px, 4vw, 32px);
+  right: clamp(14px, 6vw, 40px);
   top: 50%;
   transform: translateY(-50%);
-  padding: 9px 22px;
+  padding: 9px 20px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 255, 228, 0.6);
-  background: rgba(14, 88, 76, 0.62);
-  color: #dcfff4;
-  font-size: 0.82rem;
-  letter-spacing: 0.12em;
+  border: 1px solid rgba(140, 255, 232, 0.7);
+  background: rgba(12, 120, 108, 0.5);
+  color: #bfffea;
+  font-size: clamp(0.7rem, 1.6vw, 0.86rem);
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+  transition: transform 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
 
 .execute-exit:hover,
 .execute-exit:focus-visible {
-  background: rgba(28, 136, 120, 0.78);
-  box-shadow: 0 0 18px rgba(80, 240, 208, 0.42);
-  transform: translateY(-50%) translateY(-1px);
+  transform: translateY(-50%) scale(1.04);
+  box-shadow: 0 0 18px rgba(120, 255, 228, 0.42);
+  background: rgba(24, 180, 160, 0.68);
 }
 
 .execute-exit:focus-visible {
-  outline: 2px solid rgba(180, 255, 236, 0.9);
+  outline: 2px solid rgba(170, 255, 238, 0.9);
   outline-offset: 4px;
 }
 
@@ -94,130 +118,118 @@
 
 .execute-face {
   position: relative;
-  --face-size: min(86vmin, 92vw);
-  --face-padding: clamp(24px, 7vw, 56px);
-  width: var(--face-size);
-  height: var(--face-size);
-  border-radius: clamp(28px, 10vw, 80px);
-  background: radial-gradient(circle at 50% 38%, rgba(12, 72, 66, 0.22), rgba(2, 10, 10, 0.95));
-  border: 1px solid rgba(74, 220, 196, 0.24);
-  box-shadow:
-    0 0 160px rgba(40, 200, 180, 0.25),
-    inset 0 0 160px rgba(0, 0, 0, 0.88);
+  flex: 1;
+  width: min(92vw, 92vh);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--face-padding);
-  box-sizing: border-box;
+  padding: clamp(12px, 6vw, 48px);
   z-index: 1;
 }
 
-.execute-face::before {
-  content: "";
-  position: absolute;
-  inset: clamp(10%, 12vw, 120px);
-  border-radius: clamp(20px, 8vw, 68px);
-  border: 1px solid rgba(72, 208, 188, 0.18);
-  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.85);
-  background: radial-gradient(circle at 50% 40%, rgba(20, 120, 108, 0.16), rgba(0, 0, 0, 0.96));
+.execute-dot-grid {
+  --cols: 32;
+  --rows: 24;
+  position: relative;
+  width: 100%;
+  max-width: min(92vmin, 92vw);
+  aspect-ratio: calc(var(--cols) / var(--rows));
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  gap: clamp(0.06rem, 0.2vmin, 0.18rem);
+  padding: clamp(16px, 4vw, 32px);
+  border-radius: clamp(24px, 8vw, 64px);
+  background: radial-gradient(circle at 50% 46%, rgba(12, 140, 120, 0.18), rgba(0, 0, 0, 0.9));
+  box-shadow:
+    0 0 120px rgba(60, 240, 210, 0.24),
+    inset 0 0 120px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
 }
 
-.execute-dot-grid {
-  --cols: 28;
-  --rows: 20;
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  display: grid;
-  grid-template-columns: repeat(var(--cols), 1fr);
-  grid-template-rows: repeat(var(--rows), 1fr);
-  gap: clamp(0.12rem, 0.4vmin, 0.34rem);
-  justify-items: center;
-  align-items: center;
+.execute-dot-grid::after {
+  content: "";
+  position: absolute;
+  inset: clamp(6px, 2vw, 18px);
+  border-radius: inherit;
+  border: 1px solid rgba(72, 220, 196, 0.16);
+  pointer-events: none;
 }
 
 .execute-dot {
-  width: 100%;
-  height: 100%;
-  border-radius: 36%;
-  background: rgba(10, 40, 36, 0.4);
-  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-  transition: background 160ms ease, box-shadow 200ms ease, transform 200ms ease, opacity 160ms ease;
-  opacity: 0.16;
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 40%;
+  background: rgba(4, 24, 22, 0.5);
+  opacity: 0.18;
+  transform: scale(0.94);
+  transition: background 180ms ease, opacity 180ms ease, transform 200ms ease, box-shadow 200ms ease;
 }
 
 .execute-dot.is-on {
-  background: radial-gradient(circle at 40% 38%, rgba(212, 255, 248, 0.95), rgba(18, 148, 132, 0.9));
+  background: radial-gradient(circle at 48% 40%, rgba(210, 255, 246, 0.98), rgba(22, 160, 140, 0.9));
   box-shadow:
-    0 0 12px rgba(70, 240, 214, 0.65),
-    0 0 36px rgba(12, 160, 136, 0.45);
+    0 0 10px rgba(80, 255, 228, 0.6),
+    0 0 28px rgba(28, 180, 160, 0.4);
+  transform: scale(1.06);
   opacity: 0.92;
 }
 
 .execute-dot.is-accent {
-  background: radial-gradient(circle at 48% 44%, rgba(255, 255, 255, 0.98), rgba(110, 255, 230, 0.9));
-  box-shadow: 0 0 22px rgba(140, 255, 232, 0.85);
-  transform: scale(1.05);
+  background: radial-gradient(circle at 48% 50%, rgba(255, 255, 255, 0.98), rgba(140, 255, 234, 0.92));
+  box-shadow:
+    0 0 18px rgba(140, 255, 234, 0.82),
+    0 0 36px rgba(140, 255, 234, 0.6);
+  transform: scale(1.12);
 }
 
 .execute-dot-grid.is-boot .execute-dot.is-on {
-  animation: bootGlint 1.6s ease-in-out infinite alternate;
+  animation: bootGlint 1.4s ease-in-out infinite alternate;
 }
 
 .execute-dot-grid.is-shutdown .execute-dot.is-on {
-  animation: dissolve 0.9s ease forwards;
+  animation: dissolve 1s ease forwards;
 }
 
-.execute-stage[data-scene="shutdown"] .execute-face::before {
-  opacity: 0.25;
+.execute-stage[data-expression="salute"] .execute-dot-grid::after {
+  border-color: rgba(120, 255, 228, 0.32);
+  box-shadow: 0 0 24px rgba(120, 255, 228, 0.32);
 }
 
-.execute-stage[data-expression="salute"] .execute-face::before {
-  box-shadow:
-    inset 0 0 120px rgba(0, 0, 0, 0.78),
-    0 0 60px rgba(64, 240, 210, 0.32);
+@keyframes bootGlint {
+  0% {
+    filter: brightness(0.92);
+  }
+  100% {
+    filter: brightness(1.18);
+  }
+}
+
+@keyframes dissolve {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 
 @media (max-width: 720px) {
   .execute-stage {
-    padding: clamp(16px, 6vh, 32px) clamp(12px, 6vw, 28px);
-    grid-template-rows: auto 1fr;
+    padding: clamp(18px, 6vh, 32px) clamp(16px, 6vw, 28px);
+    gap: clamp(20px, 8vh, 36px);
   }
 
   .execute-topbar {
-    min-height: 46px;
-    padding: 10px clamp(18px, 6vw, 26px);
-    font-size: 0.78rem;
-  }
-
-  .execute-status {
-    font-size: clamp(0.75rem, 3vw, 0.92rem);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.12em;
+    padding-right: clamp(18px, 6vw, 32px);
   }
 
   .execute-exit {
-    padding: 8px 18px;
-    font-size: 0.75rem;
+    padding: 8px 16px;
+    letter-spacing: 0.12em;
   }
 
   .execute-face {
-    --face-size: min(88vmin, 100vw);
-    --face-padding: clamp(18px, 12vw, 42px);
+    width: min(94vw, 90vh);
+    padding: clamp(8px, 6vw, 32px);
   }
-
-  .execute-dot-grid {
-    gap: clamp(0.1rem, 0.5vmin, 0.24rem);
-  }
-}
-
-@keyframes bootGlint {
-  0% { transform: scale(0.6); opacity: 0.4; }
-  50% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(0.85); opacity: 0.7; }
-}
-
-@keyframes dissolve {
-  0% { opacity: 0.9; transform: scale(1); }
-  100% { opacity: 0; transform: scale(0.3); }
 }

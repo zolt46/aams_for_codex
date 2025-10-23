@@ -14,24 +14,24 @@ import {
   clearExecuteContext
 } from "./execute_context.js";
 
-const DOT_ROWS = 20;
-const DOT_COLS = 28;
+const DOT_ROWS = 24;
+const DOT_COLS = 32;
 const DOT_COUNT = DOT_ROWS * DOT_COLS;
 
 const EYE_WIDTH = 6;
 const EYE_HEIGHT = 5;
-const EYE_ROW = 5;
-const LEFT_EYE_COL = 6;
+const EYE_ROW = 6;
+const LEFT_EYE_COL = 7;
 const RIGHT_EYE_COL = DOT_COLS - LEFT_EYE_COL - EYE_WIDTH;
-const MOUTH_WIDTH = 8;
+const MOUTH_WIDTH = 10;
 const MOUTH_ROW = DOT_ROWS - 6;
 const MOUTH_COL = Math.floor((DOT_COLS - MOUTH_WIDTH) / 2);
 
 const WAITING_MESSAGES = [
-  "경로 정렬 중",
-  "시야 점검 준비",
-  "안전 체크 진행",
-  "전달 준비 중"
+  "센서 정렬 중",
+  "안전 점검",
+  "경로 준비",
+  "전달 대기"
 ];
 
 const STAGE_BASE_EXPRESSION = {
@@ -147,7 +147,7 @@ async function runExecutionFlow(initialContext) {
     context = updateExecuteContext((prev) => ({ ...prev, executor: sanitizeExecutor(me) }));
   }
 
-  updateStage("queued", "집행 준비", "승인 정보 확인 중");
+  updateStage("queued", "집행 준비", "승인 정보 확인");
 
   let detail = context.detail || null;
   if (!detail) {
@@ -166,7 +166,7 @@ async function runExecutionFlow(initialContext) {
     context = updateExecuteContext((prev) => ({ ...prev, dispatch }));
   }
 
-  updateStage("dispatch-ready", "명령 구성", "로봇 시퀀스 조립 중");
+  updateStage("dispatch-ready", "명령 구성", "시퀀스 조립");
 
   let serverResult = context.serverResult || null;
   if (!serverResult) {
@@ -184,16 +184,16 @@ async function runExecutionFlow(initialContext) {
   const requiresManual = !!(localPayload && serverResult?.bridge?.manualRequired !== false);
   context = updateExecuteContext((prev) => ({ ...prev, dispatch: dispatchFromServer, localPayload }));
 
-  updateStage("await-local", "로컬 대기", "브릿지 확인 중");
+  updateStage("await-local", "로컬 대기", "브릿지 확인");
 
   if (!requiresManual || !localPayload) {
-    updateStage("auto-dispatch", "자동 실행", "로봇이 바로 진행합니다", { level: "success", expression: "smile" });
+    updateStage("auto-dispatch", "자동 실행", "로봇 즉시 진행", { level: "success", expression: "smile" });
     invalidateRequestDetail(requestId);
     enableExit({ autoDelay: 6000 });
     return;
   }
 
-  updateStage("executing", "로봇 동작", "현장 제어 중");
+  updateStage("executing", "로봇 동작", "현장 제어");
 
   let localResult = context.localResult || null;
   if (!localResult) {
@@ -216,7 +216,7 @@ async function runExecutionFlow(initialContext) {
     || job?.summary?.message
     || (job?.summary?.actionLabel && job?.summary?.includes?.label
       ? `${job.summary.actionLabel} ${job.summary.includes.label}`
-      : "장비 제어가 정상적으로 완료되었습니다.");
+      : "장비 제어 완료");
 
   if (jobStatus && !["success", "succeeded", "done", "completed"].includes(jobStatus)) {
     await handleFailure(
@@ -268,6 +268,11 @@ function setStatus(label, message, level = "info") {
   ambientMessage = "";
   if (statusEl) {
     statusEl.setAttribute("data-level", level);
+    if (label) {
+      statusEl.setAttribute("data-label", label);
+    } else {
+      statusEl.removeAttribute("data-label");
+    }
   }
   applyStatus();
 }
@@ -279,11 +284,8 @@ function setAmbientText(text) {
 
 function applyStatus() {
   if (!statusEl) return;
-  const parts = [];
-  if (statusLabel) parts.push(statusLabel);
-  const message = ambientMessage || statusMessage;
-  if (message) parts.push(message);
-  statusEl.textContent = parts.join(" · ") || "\u00A0";
+  const message = ambientMessage || statusMessage || statusLabel;
+  statusEl.textContent = message || "\u00A0";
 }
 function startAmbientMessages(messages) {
   stopAmbientMessages();
@@ -422,21 +424,21 @@ function randomScatter(count) {
 async function playBootSequence() {
   if (screenEl) screenEl.dataset.scene = "boot";
   if (gridEl) gridEl.classList.add("is-boot");
-  setStatus("부팅", "전원 공급");
-  randomScatter(Math.floor(DOT_COUNT * 0.18));
+  setStatus("부팅", "전원 주입");
+  randomScatter(Math.floor(DOT_COUNT * 0.2));
   await wait(360);
-  setStatus("부팅", "센서 초기화");
-  randomScatter(Math.floor(DOT_COUNT * 0.5));
+  setStatus("부팅", "신경망 정렬");
+  randomScatter(Math.floor(DOT_COUNT * 0.55));
   await wait(420);
-  setStatus("부팅", "도트 정렬");
-  randomScatter(Math.floor(DOT_COUNT * 0.72));
-  await wait(360);
+  setStatus("부팅", "표정 매핑");
+  randomScatter(Math.floor(DOT_COUNT * 0.78));
+  await wait(420);
   applyExpression("blink");
-  await wait(280);
+  await wait(320);
   if (gridEl) gridEl.classList.remove("is-boot");
   if (screenEl) screenEl.dataset.scene = "active";
   setBaseExpression("idle");
-  setStatus("집행 준비", "로봇 웨이크업");
+  setStatus("집행 준비", "웨이크업 완료");
   startAmbientAnimations();
 }
 
