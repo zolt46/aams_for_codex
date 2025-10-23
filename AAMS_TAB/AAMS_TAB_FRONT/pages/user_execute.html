@@ -1,43 +1,17 @@
-<div id="top"></div>
-<main class="execute-screen" id="execute-screen" data-mood="focus" data-stage="pending" aria-live="polite">
-  <section class="execute-viewport">
-    <div class="execute-face" id="execute-bot" aria-hidden="true">
-      <div class="face-matrix"></div>
-      <div class="face-eye face-eye-left"></div>
-      <div class="face-eye face-eye-right"></div>
-      <div class="face-brow face-brow-left"></div>
-      <div class="face-brow face-brow-right"></div>
-      <div class="face-mouth"></div>
-      <div class="face-arm face-arm-left"></div>
-      <div class="face-arm face-arm-right"></div>
-    </div>
-    <div class="execute-overlay">
-      <p class="execute-stage-label" id="execute-stage-label">집행 준비 중</p>
-      <p class="execute-stage-message" id="execute-stage-message">승인된 정보를 확인하고 있습니다…</p>
-      <p class="execute-stage-sub" id="execute-stage-sub"></p>
-    </div>
+<main
+  id="execute-screen"
+  class="execute-stage"
+  data-scene="boot"
+  data-expression="sleep"
+  aria-live="polite"
+>
+  <div class="execute-backdrop" aria-hidden="true"></div>
+  <section class="execute-face" aria-hidden="true">
+    <div class="execute-face-glow"></div>
+    <div class="execute-dot-grid" id="execute-grid"></div>
   </section>
-
-  <section class="execute-info" aria-live="polite">
-    <div class="execute-summary" aria-label="집행 요약 정보">
-      <h2 class="section-heading">요약</h2>
-      <div id="execute-meta-body" class="execute-meta-body"><div class="muted">집행 정보를 준비 중…</div></div>
-    </div>
-
-    <details class="execute-log-card" open>
-      <summary>진행 로그</summary>
-      <ol id="execute-log" class="execute-log-list"></ol>
-    </details>
-
-    <details class="execute-dispatch-card">
-      <summary>전송된 장비 명령</summary>
-      <pre id="execute-dispatch-json" class="execute-dispatch-json">장비 명령을 준비 중…</pre>
-    </details>
-  </section>
-
-  <div class="execute-actions">
-    <button type="button" class="btn ghost" id="execute-back" hidden>사용자 페이지로 돌아가기</button>
-  </div>
+  <p class="execute-status" id="execute-status">시스템을 깨우는 중…</p>
+  <button type="button" id="execute-exit" class="execute-exit" hidden>사용자 페이지로 돌아가기</button>
 </main>
 <script type="module">
 import { initExecutionPage } from "../assets/js/execute.js";
