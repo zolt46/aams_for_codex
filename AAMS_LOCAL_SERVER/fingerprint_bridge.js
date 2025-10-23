@@ -154,7 +154,8 @@ function summarizeRobotPayload(payload = {}){
     action = firearmIncluded || ammoIncluded ? 'dispatch' : 'unknown';
   }
 
-  const firearm = payload.firearm || {};
+  const dispatch = payload.dispatch && typeof payload.dispatch === 'object' ? payload.dispatch : {};
+  const firearm = payload.firearm || dispatch.firearm || {};
   const firearmCode = firearm.code
     || firearm.firearm_number
     || firearm.serial
@@ -166,9 +167,12 @@ function summarizeRobotPayload(payload = {}){
   const locker = firearm.locker
     || firearm.locker_code
     || firearm.lockerCode
+    || dispatch.locker
+    || dispatch.location
     || payload.locker
     || payload.storage
     || payload.storage_code
+    || (payload.request && (payload.request.locker || payload.request.storage_locker))
     || null;
 
   const ammoItems = Array.isArray(payload.ammo) ? payload.ammo : [];
@@ -208,7 +212,10 @@ function summarizeRobotPayload(payload = {}){
     locker,
     site: payload.site_id || payload.site || null,
     purpose: payload.purpose || null,
-    location: payload.location || null
+    location: payload.location
+      || dispatch.location
+      || (payload.request && payload.request.location)
+      || null
   };
 
   cleanObject(summary);
@@ -244,7 +251,10 @@ function buildRobotPayloadSnapshot(payload = {}){
       slot: firearm.slot || null
     }) : null,
     ammo: ammoPreview.length ? ammoPreview : null,
-    location: dispatch.location || payload.location || null,
+    location: payload.location
+      || dispatch.location
+      || (payload.request && payload.request.location)
+      || null,
     purpose: dispatch.purpose || payload.purpose || null,
     simulate: dispatch.simulate || payload.simulate || null
   });

@@ -36,14 +36,13 @@ export function getFpLocalBase() {
  */
 
 // === 상단 모바일 헤더 주입 (서브 페이지용) ===
-import { logout } from "./auth.js";
- export async function mountMobileHeader({
-   title="AAMS",
-   pageType="main",
-   showLogout=true,
-   backTo="#/",
-   homeTo
- } = {}) {
+export async function mountMobileHeader({
+  title="AAMS",
+  pageType="main",
+  showLogout=true,
+  backTo="#/",
+  homeTo
+} = {}) {
 
   const top = document.getElementById("top");
   if (!top) return;
@@ -145,10 +144,7 @@ import { logout } from "./auth.js";
   // 로그아웃 버튼 공통 로직 (로그인 페이지 제외)
   if (logoutBtn && pageType !== 'login' && showLogout) {
     logoutBtn.addEventListener("click", () => {
-      try { localStorage.removeItem("AAMS_ME"); } catch {}
-      try { sessionStorage.removeItem("AAMS_ADMIN_LOGIN_ID"); } catch {}
-      location.hash = "#/";
-      location.reload();
+      void logoutKiosk();
     });
   }
 
@@ -174,6 +170,7 @@ export async function logoutKiosk() {
   } finally {
     // me 초기화/라우팅 등 기존 동작
     localStorage.removeItem("AAMS_ME");
+    try { sessionStorage.removeItem("AAMS_ADMIN_LOGIN_ID"); } catch {}
     location.hash = "#/"; // 또는 초기 페이지
   }
 }

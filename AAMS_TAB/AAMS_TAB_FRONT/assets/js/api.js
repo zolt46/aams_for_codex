@@ -89,6 +89,13 @@ export async function executeRequest({ requestId, executorId, dispatch }) {
   return _post(`${apiBase()}/api/requests/${encodeURIComponent(requestId)}/execute`, body);
 }
 
+export async function markDispatchFailure({ requestId, reason, actorId }) {
+  const body = {};
+  if (reason) body.reason = reason;
+  if (actorId) body.actor_id = actorId;
+  return _post(`${apiBase()}/api/requests/${encodeURIComponent(requestId)}/dispatch_fail`, body);
+}
+
 /** =========================
  * 관리자 승인/거부/재오픈
  * ========================= */

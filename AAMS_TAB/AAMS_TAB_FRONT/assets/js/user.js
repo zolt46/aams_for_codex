@@ -1,6 +1,13 @@
 // assets/js/user.js
 import { fetchMyPendingApprovals as fetchUserPending, executeRequest, fetchRequestDetail } from "./api.js";
 import { getMe, renderMeBrief, mountMobileHeader } from "./util.js";
+import {
+  fetchMyPendingApprovals as fetchUserPending,
+  executeRequest,
+  fetchRequestDetail,
+  markDispatchFailure
+} from "./api.js";
+import { getMe, renderMeBrief, mountMobileHeader, getFpLocalBase } from "./util.js";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const detailCache = new Map();
@@ -373,7 +380,7 @@ function wire(rows = [], me = null, { container = document } = {}) {
       const requestIdNum = Number(requestIdStr);
       const requestKey = String(requestIdStr);
       btn.disabled = true;
-      if (label) label.textContent = "집행중…"; else btn.textContent = "집행중…";
+      if (label) label.textContent = "서버 확인중…"; else btn.textContent = "서버 확인중…";
       try {
         const executor = me || getMe();
         const row = requestMap.get(requestKey);
@@ -391,13 +398,34 @@ function wire(rows = [], me = null, { container = document } = {}) {
           executor
         });
 
-        await executeRequest({
+        const serverResult = await executeRequest({
           requestId: requestIdStr,
           executorId: executor?.id,
           dispatch
         });
+        if (serverResult && serverResult.ok === false) {
+          throw new Error(serverResult.error || "집행 요청 실패");
+        }
+
+        const localPayload = serverResult?.payload;
+        const requiresManual = !!(localPayload && serverResult?.bridge?.manualRequired !== false);
+        if (requiresManual && localPayload) {
+          if (label) label.textContent = "로컬 전송중…"; else btn.textContent = "로컬 전송중…";
+          try {
+            await dispatchRobotViaLocal(localPayload);
+          } catch (localError) {
+            const reasonMessage = `로컬 브릿지 오류: ${localError?.message || localError || '알 수 없는 오류'}`;
+            try {
+              await markDispatchFailure({ requestId: requestIdStr, reason: reasonMessage, actorId: executor?.id });
+            } catch (reportError) {
+              console.warn("[AAMS][user] 로컬 브릿지 오류 보고 실패", reportError);
+            }
+            throw new Error(reasonMessage);
+          }
+        }
+
         if (label) label.textContent = "완료"; else btn.textContent = "완료";
-        setTimeout(() => location.reload(), 600);
+        setTimeout(() => location.reload(), 800);
       } catch (e) {
         alert(`집행 실패: ${e.message}`);
         btn.disabled = false;
@@ -640,16 +668,24 @@ function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} 
     : (includes.firearm ? "firearm_only" : (includes.ammo ? "ammo_only" : "none"));
 
   const locker = firearm?.locker
+    || firearm?.storage
+    || detail?.request?.storage_locker
     || request?.locker
     || request?.locker_code
     || request?.storage
     || request?.storage_code
-    || row?.location
     || row?.raw?.locker
     || row?.raw?.locker_code
     || row?.raw?.weapon_locker
     || row?.raw?.weapon?.locker
     || row?.raw?.weapon?.locker_code
+    || null;
+
+  const location = request?.location
+    || detail?.request?.location
+    || row?.raw?.request?.location
+    || row?.location
+    || firearm?.location
     || null;
 
   const payload = {
@@ -661,7 +697,7 @@ function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} 
     firearm: firearm || undefined,
     ammo: ammo.length ? ammo : undefined,
     locker: locker || undefined,
-    location: row?.location || request?.location || undefined,
+    location: location || undefined,
     purpose: row?.purpose || request?.purpose || undefined,
     requested_at: request?.requested_at || row?.requested_at || row?.created_at || undefined,
     approved_at: request?.approved_at || row?.approved_at || undefined,
@@ -788,6 +824,46 @@ function extractAmmoPayload(row = {}, detail = {}) {
   getAmmoItems(row).forEach(push);
 
   return ammoItems;
+}
+
+function joinLocalUrl(base, path) {
+  const cleanBase = (base || "").trim();
+  if (!cleanBase) return path;
+  return cleanBase.replace(/\/+$/, "") + path;
+}
+
+async function dispatchRobotViaLocal(payload, { timeoutMs = 8000 } = {}) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("장비 명령 데이터가 없습니다.");
+  }
+
+  const base = getFpLocalBase();
+  const url = joinLocalUrl(base, "/robot/execute");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    let data = null;
+    try { data = await res.json(); } catch (_) { data = null; }
+    if (!res.ok || (data && data.ok === false)) {
+      const reason = data?.error || data?.message || `HTTP ${res.status}`;
+      throw new Error(reason);
+    }
+    return data;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("로컬 브릿지 응답 시간 초과");
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizeExecutor(executor = {}) {

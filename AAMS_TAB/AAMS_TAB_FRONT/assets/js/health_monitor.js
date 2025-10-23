@@ -151,6 +151,9 @@ function formatRobotSummary(summary) {
   if (!summary.firearmCode && summary.locker) {
     parts.push(`보관 ${summary.locker}`);
   }
+  if (summary.location && summary.location !== summary.site) {
+    parts.push(`위치 ${summary.location}`);
+  }
   if (summary.site) {
     parts.push(`현장 ${summary.site}`);
   }
