@@ -1,12 +1,10 @@
 // assets/js/user.js
 import {
   fetchMyPendingApprovals,
-  executeRequest as postExecuteRequest,
-  fetchRequestDetail,
-  markDispatchFailure,
-  completeExecution
+  fetchRequestDetail
 } from "./api.js";
 import { getMe, renderMeBrief, mountMobileHeader, getFpLocalBase } from "./util.js";
+import { setExecuteContext } from "./execute_context.js";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const detailCache = new Map();
@@ -60,6 +58,8 @@ const STATUS_METADATA = {
     retryable: true
   }
 };
+
+const ROBOT_PROGRESS_KEYS = new Set(["DISPATCH_PENDING", "DISPATCHING", "DISPATCHED", "EXECUTING"]);
 
 const EXECUTION_COMPLETE_STATUSES = new Set(["EXECUTED", "COMPLETED"]);
 const ROBOT_STAGE_LABELS = {
@@ -183,6 +183,15 @@ export async function initUserMain() {
   }
 }
 
+export {
+  buildDispatchPayload,
+  dispatchRobotViaLocal,
+  formatKST,
+  formatStatusReason,
+  formatAmmoLabel,
+  resolveStatusInfo
+};
+
 function bindCollapsible(listEl, toggleEl, { defaultCollapsed = false } = {}) {
   if (!listEl) {
     return {
@@ -234,6 +243,7 @@ function renderCard(r, { variant = "pending" } = {}) {
   const executionHint = variant === "history" ? "" : renderExecutionHint(statusInfo);
   const statusReason = formatStatusReason(r);
   const summaryNotice = renderStatusNotice(statusInfo, statusReason, { variant: "summary" });
+  const stageVisual = renderRobotStageVisual(statusInfo, r, { variant });
   const detailNotice = renderStatusNotice(statusInfo, statusReason);
   const classes = ["card", "pending-card"];
   if (variant === "history") classes.push("history-card");
@@ -274,6 +284,7 @@ function renderCard(r, { variant = "pending" } = {}) {
           <span class="value">${escapeHtml(executedAt)}</span>
         </div>` : ""}
       </div>
+      ${stageVisual}
       ${summaryNotice}
       <footer class="card-actions">
         ${variant === "history" ? "" : `
@@ -371,96 +382,22 @@ function wire(rows = [], me = null, { container = document } = {}) {
   });
 
   (container?.querySelectorAll?.('[data-act="execute"]') || []).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const label = btn.querySelector(".btn-label");
-      const original = label ? label.textContent : btn.textContent;
+    btn.addEventListener("click", () => {
       const requestIdStr = btn.getAttribute("data-id");
       if (!requestIdStr) return;
-      const requestIdNum = Number(requestIdStr);
       const requestKey = String(requestIdStr);
-      btn.disabled = true;
-      if (label) label.textContent = "서버 확인중…"; else btn.textContent = "서버 확인중…";
-      try {
-        const executor = me || getMe();
-        const row = requestMap.get(requestKey);
-        let detail = null;
-        try {
-          detail = await fetchRequestDetail(requestIdStr, { force: true });
-        } catch (detailError) {
-          console.warn(`[AAMS][user] 요청 상세 정보를 불러오지 못했습니다 (id=${requestIdStr})`, detailError);
-        }
+      const executor = me || getMe();
+      const snapshot = requestMap.get(requestKey) || null;
 
-        const dispatch = buildDispatchPayload({
-          requestId: Number.isFinite(requestIdNum) ? requestIdNum : requestIdStr,
-          row,
-          detail,
-          executor
-        });
+      setExecuteContext({
+        requestId: requestIdStr,
+        row: snapshot,
+        executor,
+        state: 'pending',
+        createdAt: Date.now()
+      });
 
-        const serverResult = await postExecuteRequest({
-          requestId: requestIdStr,
-          executorId: executor?.id,
-          dispatch
-        });
-        if (serverResult && serverResult.ok === false) {
-          throw new Error(serverResult.error || "집행 요청 실패");
-        }
-
-        const localPayload = serverResult?.payload;
-        const requiresManual = !!(localPayload && serverResult?.bridge?.manualRequired !== false);
-        let localResult = null;
-        if (requiresManual && localPayload) {
-          if (label) label.textContent = "로컬 전송중…"; else btn.textContent = "로컬 전송중…";
-          try {
-            localResult = await dispatchRobotViaLocal(localPayload);
-          } catch (localError) {
-            const reasonMessage = `로컬 브릿지 오류: ${localError?.message || localError || '알 수 없는 오류'}`;
-            try {
-              await markDispatchFailure({ requestId: requestIdStr, reason: reasonMessage, actorId: executor?.id });
-            } catch (reportError) {
-              console.warn("[AAMS][user] 로컬 브릿지 오류 보고 실패", reportError);
-            }
-            throw new Error(reasonMessage);
-          }
-          const job = localResult?.job;
-          const jobStatus = String(job?.status || '').toLowerCase();
-          if (jobStatus && jobStatus !== 'succeeded') {
-            const reasonMessage = job?.message || job?.error || '장비 제어 실패';
-            try {
-              await markDispatchFailure({ requestId: requestIdStr, reason: reasonMessage, actorId: executor?.id });
-            } catch (reportError) {
-              console.warn("[AAMS][user] 로컬 브릿지 실패 보고 실패", reportError);
-            }
-            throw new Error(reasonMessage);
-          }
-
-          const completionMessage = job?.message
-            || (job?.summary?.actionLabel && job?.summary?.includes?.label
-              ? `${job.summary.actionLabel} ${job.summary.includes.label}`
-              : "장비 제어가 정상적으로 완료되었습니다.");
-
-          try {
-            await completeExecution({
-              requestId: requestIdStr,
-              actorId: executor?.id,
-              eventId: serverResult?.event_id,
-              result: job,
-              statusReason: completionMessage
-            });
-          } catch (completeError) {
-            console.warn("[AAMS][user] 집행 완료 보고 실패", completeError);
-            throw new Error(completeError?.message || "집행 완료 처리 실패");
-          }
-
-        }
-
-        if (label) label.textContent = "완료"; else btn.textContent = "완료";
-        setTimeout(() => location.reload(), 800);
-      } catch (e) {
-        alert(`집행 실패: ${e.message}`);
-        btn.disabled = false;
-        if (label) label.textContent = original; else btn.textContent = original;
-      }
+      location.hash = "#/execute";
     });
   });
 }
@@ -696,6 +633,54 @@ function renderStatusNotice(statusInfo = {}, reason = "", { variant = "detail" }
   if (!isError) classes.push("info");
   const icon = isError ? "⚠️" : "ℹ️";
   return `<p class="${classes.filter(Boolean).join(" ")}"><span class="icon" aria-hidden="true">${icon}</span><span>${escapeHtml(text)}</span></p>`;
+}
+
+function renderRobotStageVisual(statusInfo = {}, row = {}, { variant = "pending" } = {}) {
+  if (variant === "history") return "";
+
+  const key = String(statusInfo.key || row?.status || "APPROVED").toUpperCase();
+  const active = shouldShowRobotStage(statusInfo, row);
+  const label = statusInfo.label || "집행 진행 중";
+  const reason = formatStatusReason(row) || statusInfo.hint || `${label}이 진행 중입니다.`;
+  const stageToken = sanitizeToken(key || "pending");
+  const ariaHidden = active ? "false" : "true";
+  const classes = ["robot-stage", active ? "is-active" : ""].filter(Boolean).join(" ");
+
+  return `
+    <section class="${classes}" data-stage="${escapeHtml(stageToken)}" data-default-active="${active}" aria-hidden="${ariaHidden}">
+      <div class="robot-visual" aria-hidden="true">
+        <div class="robot-avatar">
+          <div class="robot-antenna"></div>
+          <div class="robot-head">
+            <span class="eye left"></span>
+            <span class="eye right"></span>
+          </div>
+          <div class="robot-mouth"></div>
+          <div class="robot-body">
+            <span class="panel-dot"></span>
+            <span class="panel-dot"></span>
+            <span class="panel-dot"></span>
+          </div>
+          <div class="robot-arm left"></div>
+          <div class="robot-arm right"></div>
+        </div>
+        <div class="robot-progress">
+          <span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="robot-stage-text" role="status" aria-live="polite">
+        <p class="robot-stage-label">${escapeHtml(label)}</p>
+        <p class="robot-stage-message">${escapeHtml(reason)}</p>
+      </div>
+    </section>`;
+}
+
+function shouldShowRobotStage(statusInfo = {}, row = {}) {
+  const key = String(statusInfo.key || row?.status || "").toUpperCase();
+  if (ROBOT_PROGRESS_KEYS.has(key)) return true;
+  const reason = formatStatusReason(row);
+  if (!reason) return false;
+  return /(대기|준비|전달|진행|동작|기다리는|기다림)/.test(reason.toLowerCase());
 }
 
 function mergeFirearmSources(localFirearm, serverFirearm) {
@@ -952,6 +937,37 @@ async function dispatchRobotViaLocal(payload, { timeoutMs = 90000 } = {}) {
     throw err instanceof Error ? err : new Error(String(err));
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function setCardBusyState(card, busy) {
+  if (!card) return;
+  card.classList.toggle("robot-busy", !!busy);
+  const stage = card.querySelector('.robot-stage');
+  if (!stage) return;
+  const defaultActive = stage.dataset && stage.dataset.defaultActive === 'true';
+  const shouldShow = busy ? true : defaultActive;
+  stage.classList.toggle('is-active', shouldShow);
+  stage.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+}
+
+function updateRobotStage(stageEl, { label, message, active, stage } = {}) {
+  if (!stageEl) return;
+  if (typeof label === 'string') {
+    const labelEl = stageEl.querySelector('.robot-stage-label');
+    if (labelEl) labelEl.textContent = label;
+  }
+  if (typeof message === 'string') {
+    const messageEl = stageEl.querySelector('.robot-stage-message');
+    if (messageEl) messageEl.textContent = message;
+  }
+  if (stage) {
+    stageEl.setAttribute('data-stage', sanitizeToken(stage));
+  }
+  if (typeof active === 'boolean') {
+    stageEl.dataset.defaultActive = active ? 'true' : 'false';
+    stageEl.classList.toggle('is-active', active);
+    stageEl.setAttribute('aria-hidden', active ? 'false' : 'true');
   }
 }
 

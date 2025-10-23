@@ -2,6 +2,7 @@ import * as Auth from "./auth.js";
 import * as FP from "./fingerprint.js";
 import * as UserPage from "./user.js";
 import * as AdminPage from "./admin.js";
+import * as ExecutePage from "./execute.js";
 
 import { assertApiBaseHealthy } from "./util.js";
 import { mountStatusMonitor } from "./health_monitor.js";
@@ -15,6 +16,7 @@ const routes = {
   "#/fp-user":     { candidates:["./pages/fp_user.html", "./fp_user.html"],     init: FP.initFpUser },
   "#/fp-admin":    { candidates:["./pages/fp_admin.html", "./fp_admin.html"],    init: FP.initFpAdmin },
   "#/user":        { candidates:["./pages/user_main.html", "./user_main.html"],   init: UserPage.initUserMain },
+  "#/execute":     { candidates:["./pages/user_execute.html", "./user_execute.html"], init: ExecutePage.initExecutionPage },
   "#/admin":       { candidates:["./pages/admin_main.html", "./admin_main.html"],  init: AdminPage.initAdminMain },
   "#/admin-summary": {
     candidates:["./pages/admin_summary.html", "./admin_summary.html"],
