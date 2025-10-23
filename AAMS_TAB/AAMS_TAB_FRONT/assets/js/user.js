@@ -2,7 +2,7 @@
 import { fetchMyPendingApprovals as fetchUserPending, executeRequest, fetchRequestDetail } from "./api.js";
 import { getMe, renderMeBrief, mountMobileHeader } from "./util.js";
 import {
-  fetchMyPendingApprovals as fetchUserPending,
+  fetchMyPendingApprovals,
   executeRequest,
   fetchRequestDetail,
   markDispatchFailure
@@ -139,7 +139,7 @@ export async function initUserMain() {
   pendingList.innerHTML = `<div class="muted">불러오는 중…</div>`;
 
   try {
-    const rows = await fetchUserPending(me.id) || [];
+    const rows = await fetchMyPendingApprovals(me.id) || [];
     rows.sort((a, b) => new Date(getLatestApprovalTimestamp(b) || 0) - new Date(getLatestApprovalTimestamp(a) || 0));
 
     const pendingRows = rows.filter((row) => isExecutionPendingStatus(row?.status));
