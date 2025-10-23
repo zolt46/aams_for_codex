@@ -666,20 +666,44 @@ function renderStatusNotice(statusInfo = {}, reason = "", { variant = "detail" }
   return `<p class="${classes.filter(Boolean).join(" ")}"><span class="icon" aria-hidden="true">${icon}</span><span>${escapeHtml(text)}</span></p>`;
 }
 
+function mergeFirearmSources(localFirearm, serverFirearm) {
+  if (!localFirearm && !serverFirearm) return undefined;
+  const merged = pruneEmpty({
+    ...(localFirearm || {}),
+    ...(serverFirearm || {})
+  });
+  return merged || undefined;
+}
+
 function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} } = {}) {
   const request = detail?.request || row?.raw?.request || row?.raw || {};
-  const firearm = extractFirearmInfo(row, detail);
-  const ammo = extractAmmoPayload(row, detail);
-  const includes = {
-    firearm: Boolean(firearm),
-    ammo: ammo.length > 0
-  };
-  const mode = includes.firearm && includes.ammo
-    ? "firearm_and_ammo"
-    : (includes.firearm ? "firearm_only" : (includes.ammo ? "ammo_only" : "none"));
+  const serverDispatch = detail?.dispatch || {};
+  const firearmLocal = extractFirearmInfo(row, detail);
+  const firearm = mergeFirearmSources(firearmLocal, serverDispatch?.firearm);
 
-  const locker = firearm?.locker
-    || firearm?.storage
+  const ammoLocal = extractAmmoPayload(row, detail);
+  const ammoFromServer = Array.isArray(serverDispatch?.ammo) ? serverDispatch.ammo : null;
+  const ammo = (ammoFromServer && ammoFromServer.length) ? ammoFromServer : ammoLocal;
+
+  const includesLocal = {
+    firearm: Boolean(firearmLocal || firearm),
+    ammo: ammoLocal.length > 0
+  };
+
+  const includes = pruneEmpty({
+    firearm: serverDispatch?.includes?.firearm ?? includesLocal.firearm,
+    ammo: serverDispatch?.includes?.ammo ?? includesLocal.ammo
+  });
+
+  const mode = serverDispatch?.mode
+    || (includes?.firearm && includes?.ammo
+      ? "firearm_and_ammo"
+      : (includes?.firearm ? "firearm_only" : (includes?.ammo ? "ammo_only" : "none")));
+
+  const locker = serverDispatch?.locker
+    || firearm?.locker
+    || firearmLocal?.locker
+    || serverDispatch?.storage
     || detail?.request?.storage_locker
     || request?.locker
     || request?.locker_code
@@ -692,39 +716,60 @@ function buildDispatchPayload({ requestId, row = {}, detail = {}, executor = {} 
     || row?.raw?.weapon?.locker_code
     || null;
 
-  const location = request?.location
+  const location = serverDispatch?.location
+    || request?.location
     || detail?.request?.location
     || row?.raw?.request?.location
     || row?.location
     || null;
 
-  const payload = {
-    request_id: requestId ?? row?.id ?? request?.id ?? null,
-    site_id: detail?.site_id || request?.site_id || request?.site || row?.raw?.site_id || null,
-    type: request?.request_type || row?.type || request?.type || null,
+  const normalizedExecutor = normalizeExecutor(executor) || pruneEmpty(serverDispatch?.executor);
+
+  const payload = pruneEmpty({
+    ...serverDispatch,
+    request_id: serverDispatch?.request_id
+      ?? requestId
+      ?? row?.id
+      ?? request?.id
+      ?? null,
+    site_id: serverDispatch?.site_id
+      ?? detail?.site_id
+      ?? request?.site_id
+      ?? request?.site
+      ?? row?.raw?.site_id
+      ?? null,
+    type: serverDispatch?.type
+      ?? request?.request_type
+      ?? row?.type
+      ?? request?.type
+      ?? null,
     mode,
     includes,
     firearm: firearm || undefined,
-    ammo: ammo.length ? ammo : undefined,
+    ammo: ammo && ammo.length ? ammo : undefined,
     locker: locker || undefined,
     location: location || undefined,
-    purpose: row?.purpose || request?.purpose || undefined,
-    requested_at: request?.requested_at || row?.requested_at || row?.created_at || undefined,
-    approved_at: request?.approved_at || row?.approved_at || undefined,
-    status: row?.status || request?.status || undefined,
-    executor: normalizeExecutor(executor)
-  };
-
-  const notes = pruneEmpty({
-    memo: request?.memo || request?.notes,
-    status_reason: row?.status_reason || request?.status_reason
+    purpose: serverDispatch?.purpose ?? row?.purpose ?? request?.purpose ?? undefined,
+    requested_at: serverDispatch?.requested_at ?? request?.requested_at ?? row?.requested_at ?? row?.created_at ?? undefined,
+    approved_at: serverDispatch?.approved_at ?? request?.approved_at ?? row?.approved_at ?? undefined,
+    status: serverDispatch?.status ?? row?.status ?? request?.status ?? undefined,
+    executor: normalizedExecutor || undefined
   });
+
+  const statusReason = row?.status_reason || request?.status_reason;
+  const notes = pruneEmpty({
+    ...(typeof serverDispatch?.notes === "object" && !Array.isArray(serverDispatch.notes) ? serverDispatch.notes : {}),
+    memo: request?.memo || request?.notes,
+    status_reason: statusReason
+  });
+
   if (notes) {
     payload.notes = notes;
+  } else if (serverDispatch?.notes && typeof serverDispatch.notes !== "object") {
+    payload.notes = serverDispatch.notes;
   }
 
-  const cleaned = pruneEmpty(payload);
-  return cleaned || undefined;
+  return payload || undefined;
 }
 
 function extractFirearmInfo(row = {}, detail = {}) {
@@ -762,6 +807,8 @@ function extractFirearmInfo(row = {}, detail = {}) {
     || candidate?.locker_name
     || candidate?.storage
     || candidate?.storage_code
+    || candidate?.firearm_storage_locker
+    || candidate?.storage_locker
     || request?.locker
     || request?.locker_code
     || null;
