@@ -1,9 +1,7 @@
 // assets/js/user.js
-import { fetchMyPendingApprovals as fetchUserPending, executeRequest, fetchRequestDetail } from "./api.js";
-import { getMe, renderMeBrief, mountMobileHeader } from "./util.js";
 import {
   fetchMyPendingApprovals,
-  executeRequest,
+  executeRequest as postExecuteRequest,
   fetchRequestDetail,
   markDispatchFailure
 } from "./api.js";
@@ -398,7 +396,7 @@ function wire(rows = [], me = null, { container = document } = {}) {
           executor
         });
 
-        const serverResult = await executeRequest({
+        const serverResult = await postExecuteRequest({
           requestId: requestIdStr,
           executorId: executor?.id,
           dispatch
