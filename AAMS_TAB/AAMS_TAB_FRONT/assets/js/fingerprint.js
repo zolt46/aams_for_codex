@@ -249,17 +249,27 @@ async function claimOnce({ adminOnly = false, requireAdmin = false, redirect, au
     if (j && j.ok && j.person_id) {
       const base = { id: Number(j.person_id), name: j.name, is_admin: !!j.is_admin };
       if (requireAdmin && !base.is_admin) {
-        return { success: false };
+        return { success: false, reason: "require_admin", me: base };
       }
       const me = await enrichAndSave(base);
       const resolvedTarget = resolveRedirect(me, redirect);
       const ctx = { source: "claim", target: resolvedTarget };
       let cbResult;
       if (typeof onResolved === "function") {
-        try { cbResult = await onResolved(me, ctx); } catch {}
+        try {
+          cbResult = await onResolved(me, ctx);
+        } catch (err) {
+          console.warn("[AAMS][fp] onResolved handler 오류", err);
+        }
       }
       if (cbResult === false) {
-        return { success: false, me, target: resolvedTarget };
+        return {
+          success: false,
+          me,
+          target: resolvedTarget,
+          reason: ctx?.rejectReason || "callback_rejected",
+          context: ctx
+        };
       }
       const nextTarget = pickTarget(cbResult, resolvedTarget);
       if (autoRedirect !== false && nextTarget) {
@@ -267,11 +277,14 @@ async function claimOnce({ adminOnly = false, requireAdmin = false, redirect, au
       }
       return { success: true, me, target: nextTarget };
     }
-  } catch {}
+  } catch (err) {
+    console.warn("[AAMS][fp] claimOnce 처리 중 오류", err);
+    return { success: false, reason: "error", error: err };
+  }
   return { success: false };
 }
 
-function listenAndRedirect({ requireAdmin = false, redirect, autoRedirect = true, onResolved } = {}) {
+function listenAndRedirect({ requireAdmin = false, redirect, autoRedirect = true, onResolved, onRejected } = {}) {
   let handled = false;
   const es = openFpEventSource({
     site: SITE,
@@ -282,6 +295,13 @@ function listenAndRedirect({ requireAdmin = false, redirect, autoRedirect = true
       if (!(d && d.type === "identify" && d.ok && r && r.person_id)) return;
       const base = { id: Number(r.person_id), name: r.name, is_admin: !!r.is_admin };
       if (requireAdmin && !base.is_admin) {
+        if (typeof onRejected === "function") {
+          try {
+            await onRejected({ reason: "require_admin", base, payload, source: "event" });
+          } catch (err) {
+            console.warn("[AAMS][fp] onRejected 처리 중 오류", err);
+          }
+        }
         return;
       }
       const me = await enrichAndSave(base);
@@ -289,9 +309,26 @@ function listenAndRedirect({ requireAdmin = false, redirect, autoRedirect = true
       const ctx = { source: "event", event: payload, target: resolvedTarget };
       let cbResult;
       if (typeof onResolved === "function") {
-        try { cbResult = await onResolved(me, ctx); } catch {}
+        try {
+          cbResult = await onResolved(me, ctx);
+        } catch (err) {
+          console.warn("[AAMS][fp] onResolved handler 오류", err);
+        }
       }
       if (cbResult === false) {
+        if (typeof onRejected === "function") {
+          try {
+            await onRejected({
+              reason: ctx?.rejectReason || "callback_rejected",
+              me,
+              ctx,
+              payload,
+              source: "event"
+            });
+          } catch (err) {
+            console.warn("[AAMS][fp] onRejected 처리 중 오류", err);
+          }
+        }
         return;
       }
       if (handled) return;
@@ -368,22 +405,51 @@ export async function initFpAdmin() {
     ? `현재 로그인한 관리자 계정(${loginId})과 지문이 일치하지 않습니다. 다시 시도해 주세요.`
     : "로그인한 관리자 계정과 지문이 일치하지 않습니다. 다시 시도해 주세요.";
 
-  let localSession = createLocalIdentifySession();
-  if (localSession?.started) {
-    localSession.started.catch((err) => {
-      console.warn("[AAMS][fp] 관리자 지문 세션 시작 실패", err);
-      stage.showError("지문 센서를 준비할 수 없습니다. 연결 상태를 확인해 주세요.", { autoResetMs: 0 });
-    });
-  }
+  const unauthorizedMessage = "등록된 관리자 지문이 아닙니다. 관리자 권한이 있는 지문으로 다시 시도해 주세요.";
 
-  const stopLocal = async (reason) => {
-    if (!localSession) return;
-    const current = localSession;
-    localSession = null;
-    await stopLocalIdentifySession(current, { reason });
+  let localSession = null;
+
+  const startLocal = () => {
+    if (localSession) return localSession;
+    const session = createLocalIdentifySession();
+    localSession = session;
+    if (session?.started) {
+      session.started.catch((err) => {
+        console.warn("[AAMS][fp] 관리자 지문 세션 시작 실패", err);
+        if (localSession === session) {
+          localSession = null;
+        }
+        stage.showError("지문 센서를 준비할 수 없습니다. 연결 상태를 확인해 주세요.", { autoResetMs: 0 });
+      });
+    }
+    return session;
   };
 
+  const stopLocal = async (reason) => {
+    const current = localSession;
+    localSession = null;
+    if (!current) return;
+    try {
+      await stopLocalIdentifySession(current, { reason });
+    } catch (err) {
+      console.warn(`[AAMS][fp] 로컬 세션 종료 실패(${reason})`, err);
+    }
+  };
 
+  const restartLocal = async (reason) => {
+    const current = localSession;
+    localSession = null;
+    if (current) {
+      try {
+        await stopLocalIdentifySession(current, { reason, turnOffLed: true });
+      } catch (err) {
+        console.warn(`[AAMS][fp] 로컬 세션 재시작 실패(${reason})`, err);
+      }
+    }
+    startLocal();
+  };
+
+  startLocal();
 
   let redirectTimer = null;
   const scheduleRedirect = (target) => {
@@ -396,7 +462,9 @@ export async function initFpAdmin() {
   const handleResolved = async (me, ctx) => {
     const actualId = me?.user_id ? String(me.user_id).trim() : "";
     if (loginId && actualId && loginId !== actualId) {
+      ctx.rejectReason = "login_mismatch";
       stage.showError(mismatchMessage, { autoResetMs: 2600 });
+      await restartLocal("login_mismatch");
       return false;
     }
     stage.setScanning();
@@ -408,11 +476,43 @@ export async function initFpAdmin() {
     return true;
   };
 
+  const handleRejected = async (info = {}) => {
+    const reason = info.reason || "unknown";
+    if (reason === "require_admin") {
+      stage.showError(unauthorizedMessage, { autoResetMs: 2600 });
+      await restartLocal("require_admin");
+      return;
+    }
+    if (reason === "login_mismatch") {
+      return;
+    }
+    await restartLocal(reason || "retry");
+  };
+
   const claimResult = await claimOnceAdmin({ autoRedirect: false, onResolved: handleResolved });
   if (claimResult.success) {
     await stopLocal("claim-success");
     return;
   }
 
-  listenAndRedirect({ requireAdmin: true, redirect: "#/admin", autoRedirect: false, onResolved: handleResolved });
+  if (claimResult.reason === "require_admin") {
+    await handleRejected({ reason: "require_admin", source: "claim" });
+  } else if (claimResult.reason === "callback_rejected") {
+    await handleRejected({
+      reason: claimResult.context?.rejectReason || "callback_rejected",
+      source: "claim",
+      context: claimResult.context,
+      me: claimResult.me
+    });
+  } else if (claimResult.reason) {
+    await handleRejected({ reason: claimResult.reason, source: "claim" });
+  }
+
+  listenAndRedirect({
+    requireAdmin: true,
+    redirect: "#/admin",
+    autoRedirect: false,
+    onResolved: handleResolved,
+    onRejected: handleRejected
+  });
 }
