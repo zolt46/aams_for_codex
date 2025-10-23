@@ -1,41 +1,35 @@
 <div id="top"></div>
 <main class="execute-screen" id="execute-screen" data-mood="focus" data-stage="pending" aria-live="polite">
-  <section class="execute-hero">
-    <div class="execute-bot" id="execute-bot" aria-hidden="true">
-      <div class="bot-shell">
-        <div class="bot-screen">
-          <div class="bot-grid"></div>
-          <div class="bot-eyes">
-            <span class="eye eye-left"></span>
-            <span class="eye eye-right"></span>
-          </div>
-          <div class="bot-mouth"></div>
-        </div>
-        <div class="bot-arm bot-arm-left"></div>
-        <div class="bot-arm bot-arm-right"></div>
-        <div class="bot-progress"><span></span><span></span><span></span><span></span></div>
-        <div class="bot-shadow"></div>
-      </div>
+  <section class="execute-viewport">
+    <div class="execute-face" id="execute-bot" aria-hidden="true">
+      <div class="face-matrix"></div>
+      <div class="face-eye face-eye-left"></div>
+      <div class="face-eye face-eye-right"></div>
+      <div class="face-brow face-brow-left"></div>
+      <div class="face-brow face-brow-right"></div>
+      <div class="face-mouth"></div>
+      <div class="face-arm face-arm-left"></div>
+      <div class="face-arm face-arm-right"></div>
     </div>
-    <div class="execute-stage-text">
+    <div class="execute-overlay">
       <p class="execute-stage-label" id="execute-stage-label">집행 준비 중</p>
       <p class="execute-stage-message" id="execute-stage-message">승인된 정보를 확인하고 있습니다…</p>
       <p class="execute-stage-sub" id="execute-stage-sub"></p>
     </div>
   </section>
 
-  <section class="execute-meta" aria-label="집행 요약 정보">
-    <h2 class="section-heading">집행 정보</h2>
-    <div id="execute-meta-body" class="execute-meta-body"><div class="muted">집행 정보를 준비 중…</div></div>
-  </section>
+  <section class="execute-info" aria-live="polite">
+    <div class="execute-summary" aria-label="집행 요약 정보">
+      <h2 class="section-heading">요약</h2>
+      <div id="execute-meta-body" class="execute-meta-body"><div class="muted">집행 정보를 준비 중…</div></div>
+    </div>
 
-  <section class="execute-log" aria-live="polite">
-    <h2 class="section-heading">진행 로그</h2>
-    <ol id="execute-log" class="execute-log-list"></ol>
-  </section>
+    <details class="execute-log-card" open>
+      <summary>진행 로그</summary>
+      <ol id="execute-log" class="execute-log-list"></ol>
+    </details>
 
-  <section class="execute-dispatch">
-    <details open>
+    <details class="execute-dispatch-card">
       <summary>전송된 장비 명령</summary>
       <pre id="execute-dispatch-json" class="execute-dispatch-json">장비 명령을 준비 중…</pre>
     </details>

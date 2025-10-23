@@ -27,6 +27,8 @@ const WAITING_MESSAGES = [
   "장비를 사용자에게 전달하고 있습니다…"
 ];
 
+const LOG_LIMIT = 60;
+
 const MODE_LABEL = {
   DISPATCH: "불출",
   ISSUE: "불출",
@@ -113,6 +115,12 @@ function appendLog(level, title, message, data) {
   li.appendChild(content);
   logListEl.appendChild(li);
   logListEl.scrollTop = logListEl.scrollHeight;
+
+  if (logListEl.children.length > LOG_LIMIT) {
+    while (logListEl.children.length > LOG_LIMIT) {
+      logListEl.removeChild(logListEl.firstChild);
+    }
+  }
 }
 
 function formatClock(ts) {
