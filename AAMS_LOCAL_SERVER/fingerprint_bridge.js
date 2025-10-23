@@ -215,6 +215,40 @@ function summarizeRobotPayload(payload = {}){
   return Object.keys(summary).length ? summary : null;
 }
 
+function buildRobotPayloadSnapshot(payload = {}){
+  if (!payload || typeof payload !== 'object') return null;
+  const dispatch = (payload.dispatch && typeof payload.dispatch === 'object') ? payload.dispatch : {};
+  const includes = dispatch.includes || payload.includes || null;
+  const firearm = dispatch.firearm || payload.firearm || null;
+  const ammoList = Array.isArray(dispatch.ammo) && dispatch.ammo.length
+    ? dispatch.ammo
+    : (Array.isArray(payload.ammo) ? payload.ammo : []);
+
+  const ammoPreview = ammoList.slice(0, 5).map(item => cleanObject({
+    id: item?.id || item?.ammo_id || null,
+    name: item?.name || item?.label || item?.category || item?.caliber || null,
+    qty: item?.qty ?? item?.quantity ?? item?.count ?? null
+  })).filter(Boolean);
+
+  return cleanObject({
+    requestId: payload.requestId ?? payload.request_id ?? null,
+    executionEventId: payload.executionEventId ?? payload.eventId ?? null,
+    type: payload.type || dispatch.type || null,
+    mode: payload.mode || dispatch.mode || null,
+    site: payload.site || dispatch.site_id || payload.site_id || null,
+    includes,
+    firearm: firearm ? cleanObject({
+      id: firearm.id || firearm.firearm_id || null,
+      code: firearm.code || firearm.firearm_number || firearm.serial || null,
+      locker: firearm.locker || firearm.storage_locker || null,
+      slot: firearm.slot || null
+    }) : null,
+    ammo: ammoPreview.length ? ammoPreview : null,
+    location: dispatch.location || payload.location || null,
+    purpose: dispatch.purpose || payload.purpose || null,
+    simulate: dispatch.simulate || payload.simulate || null
+  });
+}
 
 function updateRobotScriptState(){
   try {
@@ -379,6 +413,9 @@ function sanitizeRobotJob(job, { includePayload = false } = {}){
   if (job.summary) {
     base.summary = job.summary;
   }
+  if (job.payloadPreview) {
+    base.payloadPreview = job.payloadPreview;
+  }
   if (includePayload) {
     base.payload = job.payload;
   }
@@ -413,8 +450,9 @@ function forwardRobotEvent(job, update = {}){
       progress: update.progress || job?.progress || null,
       mode: job?.mode || null,
       summary: job?.summary || null,
+      payload: job?.payloadPreview || null,
       timestamp: timeNow(),
-      meta: update.meta || null
+      meta: update.meta || job?.payloadPreview || null
     }
   };
   forwardToRender(payload, { url: ROBOT_FORWARD_URL, token: ROBOT_FORWARD_TOKEN, statusRef: robotForwardStatus });
@@ -524,15 +562,23 @@ function startRobotJob(payload = {}){
     err.statusCode = 409;
     throw err;
   }
+    const requestId = payload.requestId ?? payload.request_id ?? null;
+  if (!requestId){
+    const err = new Error('missing_request_id');
+    err.statusCode = 400;
+    throw err;
+  }
 
   const jobId = (++robotJobCounter);
   const summary = summarizeRobotPayload(payload);
   const site = payload.site || payload.site_id || payload.dispatch?.site_id || FP_SITE;
+  const payloadPreview = buildRobotPayloadSnapshot(payload);
   const job = {
     id: jobId,
-    requestId: payload.requestId ?? payload.request_id ?? null,
+    requestId,
     eventId: payload.eventId ?? payload.executionEventId ?? payload.execution_event_id ?? null,
     payload,
+    payloadPreview,
     summary: summary || null,
     site,
     status: 'starting',

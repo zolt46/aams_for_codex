@@ -3,6 +3,7 @@ import { fetchMyPendingApprovals as fetchUserPending, executeRequest, fetchReque
 import { getMe, renderMeBrief, mountMobileHeader } from "./util.js";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
+const detailCache = new Map();
 
 const STATUS_METADATA = {
   APPROVED: {
@@ -55,6 +56,17 @@ const STATUS_METADATA = {
 };
 
 const EXECUTION_COMPLETE_STATUSES = new Set(["EXECUTED", "COMPLETED"]);
+const ROBOT_STAGE_LABELS = {
+  queued: "명령 준비",
+  dispatched: "전달 완료",
+  executing: "장비 동작 중",
+  progress: "장비 동작 중",
+  success: "완료",
+  completed: "완료",
+  failed: "실패",
+  error: "오류",
+  timeout: "시간 초과"
+};
 
 function isExecutionPendingStatus(status) {
   const key = String(status || "").trim().toUpperCase();
@@ -306,6 +318,9 @@ function renderCard(r, { variant = "pending" } = {}) {
         </div>
         ${detailNotice}
         ${executionHint}
+        <section class="robot-detail" data-robot="${escapeHtml(requestId)}">
+          <div class="muted">상세를 펼치면 장비 제어 이력이 표시됩니다.</div>
+        </section>
       </div>
     </article>`;
 }
@@ -332,7 +347,7 @@ function wire(rows = [], me = null, { container = document } = {}) {
   });
 
   (container?.querySelectorAll?.('[data-act="detail"]') || []).forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-id");
       const detail = document.querySelector(`.card-detail[data-id="${id}"]`);
       if (!detail) return;
@@ -342,6 +357,10 @@ function wire(rows = [], me = null, { container = document } = {}) {
       btn.classList.toggle("is-open", expanded);
       const label = btn.querySelector(".btn-label");
       if (label) label.textContent = expanded ? "상세 닫기" : "상세 보기";
+      if (expanded) {
+        const row = requestMap.get(String(id));
+        await populateRobotDetail({ requestId: id, row, container: detail });
+      }
     });
   });
 
@@ -386,6 +405,115 @@ function wire(rows = [], me = null, { container = document } = {}) {
       }
     });
   });
+}
+
+async function populateRobotDetail({ requestId, row, container }) {
+  if (!container) return;
+  const target = container.querySelector(`.robot-detail[data-robot="${escapeSelector(requestId)}"]`) || container.querySelector('.robot-detail');
+  if (!target) return;
+  if (!requestId) {
+    target.innerHTML = '<div class="error">요청 ID를 확인할 수 없습니다.</div>';
+    return;
+  }
+
+  const cacheKey = String(requestId);
+  const loadingHtml = '<div class="muted">장비 제어 이력을 불러오는 중…</div>';
+  target.innerHTML = loadingHtml;
+
+  try {
+    let detail = detailCache.get(cacheKey);
+    if (!detail) {
+      detail = await fetchRequestDetail(requestId, { force: true });
+      detailCache.set(cacheKey, detail);
+    }
+    target.innerHTML = renderRobotDetail(detail, row, { requestId: cacheKey });
+  } catch (err) {
+    target.innerHTML = `<div class="error">불러오기 실패: ${escapeHtml(err?.message || '오류')}</div>`;
+  }
+}
+
+function renderRobotDetail(detail, row, { requestId } = {}) {
+  if (!detail) {
+    return '<div class="muted">장비 제어 이력이 없습니다.</div>';
+  }
+
+  const dispatchPayload = buildDispatchPayload({
+    requestId,
+    row,
+    detail,
+    executor: null
+  });
+
+  const statusReason = detail?.request?.status_reason || formatStatusReason(row);
+  const statusHtml = statusReason
+    ? `<p class="robot-status">${escapeHtml(statusReason)}</p>`
+    : '';
+
+  const dispatchHtml = dispatchPayload
+    ? `<details class="robot-dispatch" open><summary>전송된 장비 명령</summary><pre>${escapeHtml(JSON.stringify(dispatchPayload, null, 2))}</pre></details>`
+    : '<div class="muted">장비 명령 데이터가 없습니다.</div>';
+
+  const timelineHtml = renderRobotTimeline(detail?.executions || []);
+
+  return `${statusHtml}${dispatchHtml}${timelineHtml}`;
+}
+
+function renderRobotTimeline(events = []) {
+  if (!Array.isArray(events) || events.length === 0) {
+    return '<div class="muted">장비 제어 이벤트가 아직 기록되지 않았습니다.</div>';
+  }
+
+  const items = events
+    .slice()
+    .sort((a, b) => new Date(a.executed_at || a.created_at || 0) - new Date(b.executed_at || b.created_at || 0))
+    .map(renderRobotTimelineItem)
+    .join('');
+
+  return `<ol class="robot-events">${items}</ol>`;
+}
+
+function renderRobotTimelineItem(event = {}) {
+  const notes = parseExecutionNotes(event.notes);
+  const stage = notes?.stage || event.event_type || 'unknown';
+  const normalizedStage = String(stage || '').toLowerCase();
+  const ts = formatKST(event.executed_at || event.created_at) || '-';
+
+  const displayStage = ROBOT_STAGE_LABELS[normalizedStage] || stage;
+
+  const messageParts = [];
+  if (notes?.job?.summary?.actionLabel) messageParts.push(notes.job.summary.actionLabel);
+  if (notes?.dispatch?.includes?.label) messageParts.push(notes.dispatch.includes.label);
+  if (notes?.reason) messageParts.push(notes.reason);
+  if (notes?.job?.message) messageParts.push(notes.job.message);
+  if (notes?.job?.status && !messageParts.includes(notes.job.status)) messageParts.push(`상태: ${notes.job.status}`);
+  if (!messageParts.length && typeof event.notes === 'string') {
+    messageParts.push(event.notes);
+  }
+
+  const payloadPreview = (normalizedStage === 'queued' || normalizedStage === 'dispatched')
+    ? (notes?.payload?.dispatch || notes?.dispatch)
+    : null;
+  const payloadSnippet = payloadPreview
+    ? `<pre>${escapeHtml(JSON.stringify(payloadPreview, null, 2))}</pre>`
+    : '';
+
+  return `
+    <li class="robot-event">
+      <div class="event-time">${escapeHtml(ts)}</div>
+      <div class="event-stage">${escapeHtml(displayStage)}</div>
+      <div class="event-message">${messageParts.length ? escapeHtml(messageParts.join(' · ')) : '-'}</div>
+      ${payloadSnippet}
+    </li>`;
+}
+
+function parseExecutionNotes(notes) {
+  if (!notes) return null;
+  if (typeof notes === 'object') return notes;
+  try {
+    return JSON.parse(notes);
+  } catch (err) {
+    return null;
+  }
 }
 
 function updateDashboardStats({ pendingCount = "-", totalApproved = "-", latest = "-" } = {}) {
@@ -709,6 +837,14 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escapeSelector(value) {
+  const str = String(value ?? "");
+  if (typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") {
+    return CSS.escape(str);
+  }
+  return str.replace(/(["'\\\[\]\.#])/g, "\\$1");
 }
 
 function sanitizeToken(value) {
