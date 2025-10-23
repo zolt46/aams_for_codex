@@ -14,15 +14,24 @@ import {
   clearExecuteContext
 } from "./execute_context.js";
 
-const DOT_ROWS = 12;
-const DOT_COLS = 16;
+const DOT_ROWS = 20;
+const DOT_COLS = 28;
 const DOT_COUNT = DOT_ROWS * DOT_COLS;
 
+const EYE_WIDTH = 6;
+const EYE_HEIGHT = 5;
+const EYE_ROW = 5;
+const LEFT_EYE_COL = 6;
+const RIGHT_EYE_COL = DOT_COLS - LEFT_EYE_COL - EYE_WIDTH;
+const MOUTH_WIDTH = 8;
+const MOUTH_ROW = DOT_ROWS - 6;
+const MOUTH_COL = Math.floor((DOT_COLS - MOUTH_WIDTH) / 2);
+
 const WAITING_MESSAGES = [
-  "레일 위치를 정렬하는 중…",
-  "비전 센서 캘리브레이션 중…",
-  "안전 점검 데이터를 불러오는 중…",
-  "사용자 전달 준비를 마무리하는 중…"
+  "경로 정렬 중",
+  "시야 점검 준비",
+  "안전 체크 진행",
+  "전달 준비 중"
 ];
 
 const STAGE_BASE_EXPRESSION = {
@@ -40,24 +49,27 @@ const STAGE_BASE_EXPRESSION = {
   missing: "sad"
 };
 
-const LEFT_EYE = { row: 3, col: 4 };
-const RIGHT_EYE = { row: 3, col: 9 };
-const MOUTH = { row: 8, col: 6 };
+const LEFT_EYE = { row: EYE_ROW, col: LEFT_EYE_COL };
+const RIGHT_EYE = { row: EYE_ROW, col: RIGHT_EYE_COL };
+const MOUTH = { row: MOUTH_ROW, col: MOUTH_COL };
 const BASE_FRAME = buildBaseFrame();
 const SALUTE_ARM = buildSaluteArm();
+const CHEEK_LEFT = buildCheek(MOUTH.row - 3, Math.max(3, LEFT_EYE.col - 2));
+const CHEEK_RIGHT = buildCheek(MOUTH.row - 3, Math.min(DOT_COLS - 4, RIGHT_EYE.col + EYE_WIDTH - 2));
+const CHEEK_BLUSH = combineSets(CHEEK_LEFT, CHEEK_RIGHT);
 
 const EXPRESSIONS = {
   sleep: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "neutral" }),
-  idle: createExpression({ mouth: "neutral", leftPupil: "center", rightPupil: "center" }),
+  idle: createExpression({ mouth: "soft-smile", leftPupil: "center", rightPupil: "center", accentExtras: [CHEEK_BLUSH] }),
   focus: createExpression({ leftEye: "narrow", rightEye: "narrow", mouth: "neutral", leftPupil: "center", rightPupil: "center" }),
-  determined: createExpression({ leftEye: "narrow", rightEye: "narrow", mouth: "neutral", leftPupil: "center", rightPupil: "center" }),
-  lookLeft: createExpression({ mouth: "neutral", leftPupil: "left", rightPupil: "left" }),
-  lookRight: createExpression({ mouth: "neutral", leftPupil: "right", rightPupil: "right" }),
-  blink: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "neutral" }),
-  wink: createExpression({ leftEye: "open", rightEye: "closed", leftPupil: "center", rightPupil: "none", mouth: "smirk" }),
-  smile: createExpression({ mouth: "smile", leftPupil: "center", rightPupil: "center" }),
-  grin: createExpression({ mouth: "smile", leftPupil: "center", rightPupil: "center" }),
-  salute: createExpression({ mouth: "smile", leftPupil: "center", rightPupil: "center", extras: [SALUTE_ARM] }),
+  determined: createExpression({ leftEye: "narrow", rightEye: "narrow", mouth: "soft-smile", leftPupil: "center", rightPupil: "center", accentExtras: [CHEEK_BLUSH] }),
+  lookLeft: createExpression({ mouth: "soft-smile", leftPupil: "left", rightPupil: "left", accentExtras: [CHEEK_BLUSH] }),
+  lookRight: createExpression({ mouth: "soft-smile", leftPupil: "right", rightPupil: "right", accentExtras: [CHEEK_BLUSH] }),
+  blink: createExpression({ leftEye: "closed", rightEye: "closed", leftPupil: "none", rightPupil: "none", mouth: "soft-smile", accentExtras: [CHEEK_BLUSH] }),
+  wink: createExpression({ leftEye: "open", rightEye: "closed", leftPupil: "center", rightPupil: "none", mouth: "smirk", accentExtras: [CHEEK_BLUSH] }),
+  smile: createExpression({ mouth: "smile", leftPupil: "center", rightPupil: "center", accentExtras: [CHEEK_BLUSH] }),
+  grin: createExpression({ mouth: "smile", leftPupil: "up", rightPupil: "up", accentExtras: [CHEEK_BLUSH] }),
+  salute: createExpression({ mouth: "smile", leftPupil: "center", rightPupil: "center", extras: [SALUTE_ARM], accentExtras: [CHEEK_BLUSH] }),
   sad: createExpression({ mouth: "frown", leftEye: "narrow", rightEye: "narrow", leftPupil: "center", rightPupil: "center" }),
   surprised: createExpression({ mouth: "open", leftPupil: "center", rightPupil: "center" })
 };
@@ -135,7 +147,7 @@ async function runExecutionFlow(initialContext) {
     context = updateExecuteContext((prev) => ({ ...prev, executor: sanitizeExecutor(me) }));
   }
 
-  updateStage("queued", "집행 명령 준비 중", "승인된 요청을 확인하고 있습니다…");
+  updateStage("queued", "집행 준비", "승인 정보 확인 중");
 
   let detail = context.detail || null;
   if (!detail) {
@@ -154,7 +166,7 @@ async function runExecutionFlow(initialContext) {
     context = updateExecuteContext((prev) => ({ ...prev, dispatch }));
   }
 
-  updateStage("dispatch-ready", "장비 명령 구성", "로봇이 수행할 명령을 조합하는 중…");
+  updateStage("dispatch-ready", "명령 구성", "로봇 시퀀스 조립 중");
 
   let serverResult = context.serverResult || null;
   if (!serverResult) {
@@ -172,16 +184,16 @@ async function runExecutionFlow(initialContext) {
   const requiresManual = !!(localPayload && serverResult?.bridge?.manualRequired !== false);
   context = updateExecuteContext((prev) => ({ ...prev, dispatch: dispatchFromServer, localPayload }));
 
-  updateStage("await-local", "로컬 장비 연결 확인", "로봇 브릿지가 응답을 준비하고 있습니다…");
+  updateStage("await-local", "로컬 대기", "브릿지 확인 중");
 
   if (!requiresManual || !localPayload) {
-    updateStage("auto-dispatch", "자동 장비 명령", "로컬 브릿지가 자동으로 집행을 처리합니다.", { level: "success", expression: "smile" });
+    updateStage("auto-dispatch", "자동 실행", "로봇이 바로 진행합니다", { level: "success", expression: "smile" });
     invalidateRequestDetail(requestId);
     enableExit({ autoDelay: 6000 });
     return;
   }
 
-  updateStage("executing", "장비 동작 중", "로봇이 현장을 제어하고 있습니다…");
+  updateStage("executing", "로봇 동작", "현장 제어 중");
 
   let localResult = context.localResult || null;
   if (!localResult) {
@@ -410,13 +422,13 @@ function randomScatter(count) {
 async function playBootSequence() {
   if (screenEl) screenEl.dataset.scene = "boot";
   if (gridEl) gridEl.classList.add("is-boot");
-  setStatus("시스템 웨이크업", "매트릭스를 정렬하는 중…");
+  setStatus("부팅", "전원 공급");
   randomScatter(Math.floor(DOT_COUNT * 0.18));
   await wait(360);
-  setStatus("시스템 웨이크업", "에메랄드 코어에 전원을 공급합니다…");
+  setStatus("부팅", "센서 초기화");
   randomScatter(Math.floor(DOT_COUNT * 0.5));
   await wait(420);
-  setStatus("시스템 웨이크업", "감각 모듈을 초기화합니다…");
+  setStatus("부팅", "도트 정렬");
   randomScatter(Math.floor(DOT_COUNT * 0.72));
   await wait(360);
   applyExpression("blink");
@@ -424,7 +436,7 @@ async function playBootSequence() {
   if (gridEl) gridEl.classList.remove("is-boot");
   if (screenEl) screenEl.dataset.scene = "active";
   setBaseExpression("idle");
-  setStatus("집행 모드", "로봇을 준비하고 있습니다…");
+  setStatus("집행 준비", "로봇 웨이크업");
   startAmbientAnimations();
 }
 
@@ -442,7 +454,7 @@ async function powerDownAndExit({ immediate = false } = {}) {
   if (gridEl) gridEl.classList.add("is-shutdown");
 
   if (!immediate) {
-    setStatus("시스템 종료", "안전 절차를 마무리하는 중…");
+    setStatus("종료", "안전 절차 진행");
     playMicroExpression("blink", 320);
     await wait(360);
     setBaseExpression("sleep");
@@ -561,6 +573,12 @@ function mergeInto(target, source) {
   }
 }
 
+function combineSets(...sets) {
+  const merged = new Set();
+  sets.forEach((set) => mergeInto(merged, set));
+  return merged;
+}
+
 function rectCoords(row, col, height, width) {
   const coords = [];
   for (let r = 0; r < height; r += 1) {
@@ -603,13 +621,26 @@ function buildBaseFrame() {
   ]).forEach((value) => frame.add(value));
   return frame;
 }
+
 function buildSaluteArm() {
+  const baseRow = Math.max(4, MOUTH.row - 1);
+  const baseCol = Math.min(DOT_COLS - 4, RIGHT_EYE.col + EYE_WIDTH + 1);
   return new Set(coordsIndices([
-    [8, 10], [7, 10], [6, 10],
-    [7, 11], [6, 11], [5, 11],
-    [5, 12], [4, 12], [4, 11],
-    [8, 11]
+    [baseRow + 1, baseCol - 1],
+    [baseRow, baseCol - 1],
+    [baseRow - 1, baseCol - 1],
+    [baseRow - 2, baseCol - 1],
+    [baseRow - 2, baseCol],
+    [baseRow - 3, baseCol],
+    [baseRow - 4, baseCol],
+    [baseRow - 4, baseCol + 1],
+    [baseRow - 3, baseCol + 1],
+    [baseRow - 1, baseCol]
   ]));
+}
+
+function buildCheek(row, col) {
+  return new Set(rectCoords(row, col, 2, 2));
 }
 
 function createExpression({
@@ -618,7 +649,8 @@ function createExpression({
   leftPupil = "center",
   rightPupil = "center",
   mouth = "neutral",
-  extras = []
+  extras = [],
+  accentExtras = []
 } = {}) {
   const on = new Set(BASE_FRAME);
   const accent = new Set();
@@ -629,6 +661,7 @@ function createExpression({
   mergeInto(accent, buildPupil(RIGHT_EYE, rightPupil));
   mergeInto(on, buildMouth(mouth));
   extras.forEach((extra) => mergeInto(on, extra));
+  accentExtras.forEach((extra) => mergeInto(accent, extra));
   accent.forEach((value) => on.add(value));
 
   return Object.freeze({ on, accent });
@@ -637,47 +670,60 @@ function createExpression({
 function buildEye(anchor, mode = "open") {
   const { row, col } = anchor;
   if (mode === "closed") {
-    return rectCoords(row + 2, col, 1, 4);
+    return rectCoords(row + Math.floor(EYE_HEIGHT / 2), col, 1, EYE_WIDTH);
   }
   if (mode === "narrow") {
     return [
-      ...rectCoords(row + 1, col, 1, 4),
-      ...rectCoords(row + 2, col, 1, 4)
+      ...rectCoords(row + 1, col, 1, EYE_WIDTH),
+      ...rectCoords(row + 2, col, 1, EYE_WIDTH),
+      ...rectCoords(row + 3, col, 1, EYE_WIDTH)
     ];
   }
   return [
-    ...rectCoords(row, col + 1, 1, 2),
-    ...rectCoords(row + 1, col, 1, 4),
-    ...rectCoords(row + 2, col, 1, 4),
-    ...rectCoords(row + 3, col + 1, 1, 2)
+    ...rectCoords(row, col + 1, 1, EYE_WIDTH - 2),
+    ...rectCoords(row + 1, col, 1, EYE_WIDTH),
+    ...rectCoords(row + 2, col, 1, EYE_WIDTH),
+    ...rectCoords(row + 3, col, 1, EYE_WIDTH),
+    ...rectCoords(row + 4, col + 1, 1, EYE_WIDTH - 2)
   ];
 }
 
 function buildPupil(anchor, direction = "center") {
   const { row, col } = anchor;
   if (direction === "none") return [];
-  if (direction === "left") return rectCoords(row + 1, col, 2, 2);
-  if (direction === "right") return rectCoords(row + 1, col + 2, 2, 2);
-  if (direction === "up") return rectCoords(row, col + 1, 2, 2);
-  return rectCoords(row + 1, col + 1, 2, 2);
+  const width = 2;
+  const height = 2;
+  const centerRow = row + 2;
+  const centerCol = col + Math.floor((EYE_WIDTH - width) / 2);
+  let targetRow = centerRow;
+  let targetCol = centerCol;
+  if (direction === "left") targetCol = col + 1;
+  if (direction === "right") targetCol = col + EYE_WIDTH - width - 1;
+  if (direction === "up") targetRow = row + 1;
+  if (direction === "down") targetRow = row + 3;
+  return rectCoords(targetRow, targetCol, height, width);
 }
 
 function buildMouth(mode = "neutral") {
   const { row, col } = MOUTH;
+  const width = MOUTH_WIDTH;
   const coords = [];
   if (mode === "smile") {
-    coords.push(...rectCoords(row, col, 1, 4));
-    coords.push(...coordsIndices([[row - 1, col], [row - 1, col + 3]]));
+    coords.push(...rectCoords(row, col, 1, width));
+    coords.push(...coordsIndices([[row - 1, col], [row - 1, col + width - 1]]));
+  } else if (mode === "soft-smile") {
+    coords.push(...rectCoords(row, col + 1, 1, width - 2));
+    coords.push(...coordsIndices([[row - 1, col + 1], [row - 1, col + width - 2]]));
   } else if (mode === "frown") {
-    coords.push(...rectCoords(row, col, 1, 4));
-    coords.push(...coordsIndices([[row + 1, col], [row + 1, col + 3]]));
+    coords.push(...rectCoords(row, col, 1, width));
+    coords.push(...coordsIndices([[row + 1, col], [row + 1, col + width - 1]]));
   } else if (mode === "open") {
-    coords.push(...rectCoords(row - 1, col + 1, 3, 2));
+    coords.push(...rectCoords(row - 1, col + Math.floor((width - 2) / 2), 3, 2));
   } else if (mode === "smirk") {
-    coords.push(...rectCoords(row, col, 1, 3));
-    coords.push(...coordsIndices([[row - 1, col + 2], [row, col + 3]]));
+    coords.push(...rectCoords(row, col + width - 4, 1, 4));
+    coords.push(...coordsIndices([[row - 1, col + width - 3], [row, col + width - 1]]));
   } else {
-    coords.push(...rectCoords(row, col, 1, 4));
+    coords.push(...rectCoords(row, col, 1, width));
   }
   return coords;
 }
