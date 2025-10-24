@@ -156,6 +156,7 @@
 
   const config = {
     API_BASE: DEFAULT_API_BASE,
+    API_SOURCE: 'default',
     LOCAL_FP_BASE: DEFAULT_FP_BASE
   };
 
@@ -170,11 +171,15 @@
     }
     if (config.API_BASE !== sanitized) {
       config.API_BASE = sanitized;
+      config.API_SOURCE = source || 'unknown';
       try {
         window.dispatchEvent(
           new CustomEvent('aams:api-base-change', { detail: { base: sanitized, source } })
         );
       } catch (_) {}
+    }
+    if (!config.API_SOURCE) {
+      config.API_SOURCE = source || 'unknown';
     }
     if (persist) {
       writeStorage(STORAGE_KEYS.API, sanitized);
@@ -302,10 +307,64 @@
     if (!base) return false;
     if (manualApiLocked) return false;
     if (typeof window === 'undefined' || !window.location) return false;
-    const hostname = window.location.hostname || '';
-    if (!isLocalHostname(hostname)) return false;
-    const origin = getCurrentOrigin();
-    return origin && base === origin;
+    const { protocol, hostname } = window.location;
+    if (!isLocalHostname(hostname || '')) return false;
+    if ((protocol || '').toLowerCase() !== 'http:') return false;
+    return true;
+  }
+
+  function fetchWithTimeout(url, { timeoutMs = 2500, method = 'GET' } = {}) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let timer = null;
+    if (controller) {
+      timer = setTimeout(() => controller.abort(), timeoutMs);
+    }
+    const opts = {
+      method,
+      cache: 'no-store',
+      credentials: 'omit'
+    };
+    if (controller) {
+      opts.signal = controller.signal;
+    }
+    return fetch(url, opts)
+      .catch((err) => {
+        throw err;
+      })
+      .finally(() => {
+        if (timer) clearTimeout(timer);
+      });
+  }
+
+  async function validateApiCandidate(origin) {
+    try {
+      const healthRes = await fetchWithTimeout(joinApiUrl(origin, '/health'), { timeoutMs: 2000 });
+      if (!healthRes.ok) return null;
+    } catch (_) {
+      return null;
+    }
+
+    const params = new URLSearchParams();
+    if (window.FP_SITE) {
+      params.set('site', String(window.FP_SITE));
+    }
+    const suffix = params.toString();
+    const envUrl = joinApiUrl(origin, `/api/tab/env.json${suffix ? `?${suffix}` : ''}`);
+    try {
+      const envRes = await fetchWithTimeout(envUrl, { timeoutMs: 3500 });
+      if (!envRes.ok) {
+        return null;
+      }
+      let payload = null;
+      try {
+        payload = await envRes.json();
+      } catch (_) {
+        payload = null;
+      }
+      return { origin, payload };
+    } catch (_) {
+      return null;
+    }
   }
 
   async function discoverLocalApiBase({ failedBase = '' } = {}) {
@@ -400,41 +459,59 @@
         if (origin === skipOrigin) continue;
         if (seenOrigins.has(origin)) continue;
         seenOrigins.add(origin);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2500);
-        try {
-          const res = await fetch(joinApiUrl(origin, '/health'), {
-            cache: 'no-store',
-            credentials: 'omit',
-            signal: controller.signal
-          });
-          if (res && res.ok) {
-            return origin;
-          }
-        } catch (_) {
-          // ignore failures, try next candidate
-        } finally {
-          clearTimeout(timer);
+        const validated = await validateApiCandidate(origin);
+        if (validated) {
+          return validated;
         }
       }
     }
 
-    return '';
+    return null;
+  }
+
+  function clearStoredApiBaseIfMatches(value) {
+    if (!value) return false;
+    const stored = readStorage(STORAGE_KEYS.API).trim();
+    if (stored && stored === value) {
+      writeStorage(STORAGE_KEYS.API, null);
+      manualApiLocked = false;
+      return true;
+    }
+    return false;
+  }
+
+  function resetToDefaultApiBase({ reason = '' } = {}) {
+    const prev = config.API_BASE;
+    if (!prev) return;
+    clearStoredApiBaseIfMatches(prev);
+    config.API_BASE = '';
+    config.API_SOURCE = 'default';
+    window.AAMS_PUBLIC_API_BASE = '';
+    localDiscoveryAttempted = false;
+    setApiBase(DEFAULT_API_BASE, { source: 'default', force: true });
+    if (reason) {
+      console.warn('[AAMS][config] API_BASE 초기화:', reason);
+    }
   }
 
   async function attemptLocalFallback({ failedBase = '' } = {}) {
     if (localDiscoveryAttempted) return;
     localDiscoveryAttempted = true;
     const candidate = await discoverLocalApiBase({ failedBase });
-    if (candidate) {
-      const applied = setApiBase(candidate, {
+    if (candidate && candidate.origin) {
+      const applied = setApiBase(candidate.origin, {
         persist: true,
         source: 'local-discovery',
         force: true
       });
       if (applied) {
-        console.info('[AAMS][config] 로컬 백엔드 감지됨:', candidate);
-        await fetchRemoteEnv();
+        console.info('[AAMS][config] 로컬 백엔드 감지됨:', candidate.origin);
+        if (candidate.payload?.env) {
+          applyEnv(candidate.payload.env, { source: 'remote-env', allowOverride: true });
+        }
+        if (Array.isArray(candidate.payload?.bridge?.hints) && candidate.payload.bridge.hints.length) {
+          window.AAMS_BRIDGE_HINTS = candidate.payload.bridge.hints.slice(0, 8);
+        }
       }
       return;
     }
@@ -473,6 +550,9 @@
     try {
       const res = await fetch(url, { cache: 'no-store', credentials: 'omit' });
       if (!res.ok) {
+        if (clearStoredApiBaseIfMatches(sanitizedBase) || config.API_SOURCE === 'local-discovery') {
+          resetToDefaultApiBase({ reason: `env_fetch_http_${res.status || 'err'}` });
+        }
         if (shouldAttemptLocalFallback(sanitizedBase)) {
           await attemptLocalFallback({ failedBase: sanitizedBase });
         }
@@ -487,6 +567,9 @@
       }
     } catch (err) {
       console.warn('[AAMS][config] 원격 환경 정보 로드 실패', err);
+      if (clearStoredApiBaseIfMatches(sanitizedBase) || config.API_SOURCE === 'local-discovery') {
+        resetToDefaultApiBase({ reason: 'env_fetch_error' });
+      }
       if (shouldAttemptLocalFallback(sanitizedBase)) {
         await attemptLocalFallback({ failedBase: sanitizedBase });
       }
