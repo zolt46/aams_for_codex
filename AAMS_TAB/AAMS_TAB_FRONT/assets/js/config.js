@@ -35,6 +35,15 @@
     return REMOTE_API_BASE;
   }
 
+  function getCurrentOrigin() {
+    if (typeof window === 'undefined' || !window.location) return '';
+    try {
+      return new URL(window.location.href).origin;
+    } catch (_) {
+      return '';
+    }
+  }
+
   const DEFAULT_API_BASE = detectDefaultApiBase();
 
   const STORAGE_KEYS = {
@@ -140,7 +149,7 @@
 
   let manualApiLocked = false;
   let manualFpLocked = false;
-
+  let localDiscoveryAttempted = false;
   function setApiBase(candidate, { persist = false, source = 'unknown', force = false } = {}) {
     const sanitized = sanitizeHttpsUrl(candidate);
     if (!sanitized) return false;
@@ -271,6 +280,103 @@
     return `${trimmed}${path}`;
   }
 
+  function shouldAttemptLocalFallback(base) {
+    if (localDiscoveryAttempted) return false;
+    if (!base) return false;
+    if (manualApiLocked) return false;
+    if (typeof window === 'undefined' || !window.location) return false;
+    const hostname = window.location.hostname || '';
+    if (!isLocalHostname(hostname)) return false;
+    const origin = getCurrentOrigin();
+    return origin && base === origin;
+  }
+
+  async function discoverLocalApiBase({ failedBase = '' } = {}) {
+    if (typeof window === 'undefined' || !window.location) return '';
+    const { protocol, hostname } = window.location;
+    if (!isLocalHostname(hostname || '')) return '';
+
+    const proto = protocol && protocol.toLowerCase() === 'https:' ? 'https:' : 'http:';
+    const hostCandidates = new Set();
+    if (hostname) hostCandidates.add(hostname);
+    hostCandidates.add('localhost');
+    hostCandidates.add('127.0.0.1');
+    hostCandidates.add('::1');
+    hostCandidates.add('[::1]');
+
+    const normalizeHost = (host) => {
+      if (!host) return '';
+      const trimmed = host.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        return trimmed;
+      }
+      return trimmed.includes(':') ? `[${trimmed}]` : trimmed;
+    };
+
+    const skipOrigin = failedBase || '';
+    const seenOrigins = new Set();
+    const candidatePorts = [3000, 3001, 8000, 8080, 5173, 4173];
+
+    for (const hostCandidate of hostCandidates) {
+      const normalizedHost = normalizeHost(hostCandidate);
+      if (!normalizedHost) continue;
+      for (const candidatePort of candidatePorts) {
+        if (!candidatePort) continue;
+        const origin = `${proto}//${normalizedHost}:${candidatePort}`;
+        if (origin === skipOrigin) continue;
+        if (seenOrigins.has(origin)) continue;
+        seenOrigins.add(origin);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        try {
+          const res = await fetch(joinApiUrl(origin, '/health'), {
+            cache: 'no-store',
+            credentials: 'omit',
+            signal: controller.signal
+          });
+          if (res && res.ok) {
+            return origin;
+          }
+        } catch (_) {
+          // ignore failures, try next candidate
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    }
+
+    return '';
+  }
+
+  async function attemptLocalFallback({ failedBase = '' } = {}) {
+    if (localDiscoveryAttempted) return;
+    localDiscoveryAttempted = true;
+    const candidate = await discoverLocalApiBase({ failedBase });
+    if (candidate) {
+      const applied = setApiBase(candidate, {
+        persist: true,
+        source: 'local-discovery',
+        force: true
+      });
+      if (applied) {
+        console.info('[AAMS][config] 로컬 백엔드 감지됨:', candidate);
+        await fetchRemoteEnv();
+      }
+      return;
+    }
+    if (failedBase !== REMOTE_API_BASE) {
+      const applied = setApiBase(REMOTE_API_BASE, {
+        source: 'remote-fallback',
+        force: true
+      });
+      if (applied) {
+        console.info('[AAMS][config] Render 백엔드로 폴백:', REMOTE_API_BASE);
+        await fetchRemoteEnv();
+      }
+    }
+  }
+
   async function fetchRemoteEnv() {
     const base = config.API_BASE || DEFAULT_API_BASE;
     const sanitizedBase = sanitizeHttpsUrl(base);
@@ -284,6 +390,9 @@
     try {
       const res = await fetch(url, { cache: 'no-store', credentials: 'omit' });
       if (!res.ok) {
+        if (shouldAttemptLocalFallback(sanitizedBase)) {
+          await attemptLocalFallback({ failedBase: sanitizedBase });
+        }
         return;
       }
       const payload = await res.json().catch(() => null);
@@ -295,6 +404,9 @@
       }
     } catch (err) {
       console.warn('[AAMS][config] 원격 환경 정보 로드 실패', err);
+      if (shouldAttemptLocalFallback(sanitizedBase)) {
+        await attemptLocalFallback({ failedBase: sanitizedBase });
+      }
     }
   }
 
