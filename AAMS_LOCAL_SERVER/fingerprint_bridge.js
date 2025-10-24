@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
 const { spawn } = require('child_process');
+const os = require('os');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
@@ -45,6 +46,8 @@ const ROBOT_SCRIPT = process.env.ROBOT_SCRIPT || path.join(__dirname, 'robot_sim
 const ROBOT_DISABLED = (process.env.ROBOT_DISABLED || '') === '1';
 const ROBOT_FORWARD_URL = process.env.ROBOT_FORWARD_URL || process.env.RENDER_ROBOT_URL || FORWARD_URL || '';
 const ROBOT_FORWARD_TOKEN = process.env.ROBOT_FORWARD_TOKEN || process.env.RENDER_ROBOT_TOKEN || FORWARD_TOKEN || '';
+
+const BRIDGE_ANNOUNCE_INTERVAL_MS = Number(process.env.BRIDGE_ANNOUNCE_INTERVAL_MS || 60000);
 
 
 function log(...args){ console.log('[fp-bridge]', ...args); }
@@ -85,6 +88,153 @@ const robotState = {
 };
 
 const timeNow = () => Date.now();
+
+const BRIDGE_HOSTNAME = (() => {
+  try {
+    return os.hostname();
+  } catch (_) {
+    return null;
+  }
+})();
+const BRIDGE_DISCOVERY_REFRESH_MS = Number(process.env.BRIDGE_DISCOVERY_REFRESH_MS || 15000);
+let lastDiscoverySnapshot = null;
+let lastDiscoveryCollectedAt = 0;
+let lastAnnouncementSignature = '';
+let lastAnnouncementAt = 0;
+let lastAnnouncementError = null;
+
+function uniquePush(set, list, value) {
+  if (!value) return;
+  if (set.has(value)) return;
+  set.add(value);
+  list.push(value);
+}
+
+function collectDiscoverySnapshot() {
+  const interfaces = os.networkInterfaces?.() || {};
+  const addresses = [];
+  const urlHints = [];
+  const seenUrls = new Set();
+
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!entry || !entry.address) continue;
+      const family = entry.family || entry.addressFamily || '';
+      const normalizedFamily = typeof family === 'string' ? family : String(family);
+      const record = {
+        interface: name,
+        address: entry.address,
+        family: normalizedFamily,
+        internal: !!entry.internal,
+        mac: entry.mac || null,
+        netmask: entry.netmask || null,
+        scopeid: entry.scopeid ?? null
+      };
+      addresses.push(record);
+      if (entry.internal) continue;
+      let host = entry.address;
+      if (!host) continue;
+      const familyLower = normalizedFamily.toLowerCase();
+      if (familyLower === 'ipv6' || normalizedFamily === '6') {
+        if (!host.startsWith('[')) {
+          const withoutZone = host.includes('%') ? host.split('%')[0] : host;
+          host = `[${withoutZone}]`;
+        }
+      }
+      uniquePush(seenUrls, urlHints, `http://${host}:${LOCAL_PORT}`);
+    }
+  }
+
+  if (BRIDGE_HOSTNAME) {
+    uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}`);
+    if (!BRIDGE_HOSTNAME.includes('.')) {
+      uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}.local:${LOCAL_PORT}`);
+    }
+  }
+
+  const snapshot = {
+    hostname: BRIDGE_HOSTNAME || null,
+    port: LOCAL_PORT,
+    urlHints,
+    addresses,
+    generatedAt: timeNow()
+  };
+  lastDiscoverySnapshot = snapshot;
+  lastDiscoveryCollectedAt = snapshot.generatedAt;
+  return snapshot;
+}
+
+function getDiscoverySnapshot({ force = false } = {}) {
+  const now = timeNow();
+  if (force || !lastDiscoverySnapshot || (now - lastDiscoveryCollectedAt) > BRIDGE_DISCOVERY_REFRESH_MS) {
+    return collectDiscoverySnapshot();
+  }
+  return lastDiscoverySnapshot;
+}
+
+function discoverySignature(snapshot) {
+  try {
+    const addresses = Array.isArray(snapshot?.addresses)
+      ? snapshot.addresses.map((addr) => `${addr.interface || ''}|${addr.address || ''}`)
+      : [];
+    const hints = Array.isArray(snapshot?.urlHints) ? snapshot.urlHints : [];
+    return JSON.stringify({ addresses, hints });
+  } catch (err) {
+    return '';
+  }
+}
+
+async function announceBridgePresence(reason = 'periodic') {
+  if (!FORWARD_URL) return;
+  const snapshot = getDiscoverySnapshot({ force: reason === 'startup' });
+  const signature = discoverySignature(snapshot);
+  const now = timeNow();
+  if (signature && signature === lastAnnouncementSignature && (now - lastAnnouncementAt) < BRIDGE_ANNOUNCE_INTERVAL_MS / 2) {
+    return;
+  }
+
+  const primaryUrl = snapshot?.urlHints?.[0] || (BRIDGE_HOSTNAME ? `http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}` : null);
+  const payload = {
+    type: 'bridge_presence',
+    reason,
+    hostname: snapshot?.hostname || null,
+    port: snapshot?.port || LOCAL_PORT,
+    base: primaryUrl,
+    urlHints: snapshot?.urlHints || [],
+    addresses: snapshot?.addresses || [],
+    timestamp: new Date().toISOString()
+  };
+
+  const ok = await forwardToRender(payload);
+  if (ok) {
+    lastAnnouncementSignature = signature;
+    lastAnnouncementAt = now;
+    lastAnnouncementError = null;
+    log('bridge presence announced', {
+      hints: payload.urlHints?.length || 0,
+      addresses: payload.addresses?.length || 0,
+      reason
+    });
+  } else {
+    lastAnnouncementError = 'forward_failed';
+    warn('bridge presence announce failed (forward)');
+  }
+}
+
+function scheduleBridgeAnnouncements() {
+  if (!FORWARD_URL) return;
+  announceBridgePresence('startup').catch((err) => {
+    warn('bridge presence announce failed:', err?.message || err);
+  });
+  if (BRIDGE_ANNOUNCE_INTERVAL_MS > 0) {
+    setInterval(() => {
+      announceBridgePresence('interval').catch((err) => {
+        warn('bridge presence announce failed:', err?.message || err);
+      });
+    }, BRIDGE_ANNOUNCE_INTERVAL_MS).unref?.();
+  }
+}
 
 function httpError(status, message){
   const err = new Error(message || 'error');
@@ -632,7 +782,7 @@ async function runSensorCommand({ command, payload = {}, expectedType, timeoutMs
 }
 
 async function forwardToRender(obj, { url = FORWARD_URL, token = FORWARD_TOKEN, statusRef = forwardStatus } = {}){
-  if (!url) return;
+  if (!url) return false;
   try {
     const headers = {
       'content-type': 'application/json'
@@ -650,13 +800,17 @@ async function forwardToRender(obj, { url = FORWARD_URL, token = FORWARD_TOKEN, 
       if (statusRef) statusRef.lastErrorAt = timeNow();
       const text = await res.text().catch(() => '');
       warn('forward failed:', res.status, res.statusText, text || '');
+      return false;
     } else {
       if (statusRef) statusRef.lastOkAt = timeNow();
+      return true;
     }
   } catch (err) {
     if (statusRef) statusRef.lastErrorAt = timeNow();
     warn('forward error:', err.message || err);
+    return false;
   }
+  return false;
 }
 
 let wsServer = null;
@@ -1300,7 +1454,20 @@ function buildHealthPayload(){
       history: robotState.history || [],
       lastEventAt: robotState.lastEventAt || null,
       forward: { ...robotForwardStatus }
-    }
+    },
+    discovery: (() => {
+      const snapshot = getDiscoverySnapshot();
+      return {
+        hostname: snapshot?.hostname || BRIDGE_HOSTNAME || null,
+        port: snapshot?.port || LOCAL_PORT,
+        urlHints: snapshot?.urlHints || [],
+        addresses: snapshot?.addresses || [],
+        generatedAt: snapshot?.generatedAt || null,
+        announceIntervalMs: BRIDGE_ANNOUNCE_INTERVAL_MS,
+        lastAnnouncedAt: lastAnnouncementAt || null,
+        lastAnnouncementError: lastAnnouncementError || null
+      };
+    })()
   };
 }
 
@@ -1712,6 +1879,7 @@ if (TAB_STATIC_AVAILABLE){
 
 setupDebugWS();
 startHttpServer();
+scheduleBridgeAnnouncements();
 identifyLoop().catch(err => warn('identify loop exited:', err?.message || err));
 
 (async () => {

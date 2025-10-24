@@ -2213,7 +2213,21 @@ app.post('/api/robot/event', async (req, res) => {
 // server.js 하단에 추가/완성
 const sseClients = new Map(); // site -> Set(res)
 const lastEvent  = new Map(); // site -> last json
+const bridgePresence = new Map(); // site -> { hints, addresses, hostname, port, lastSeen, base }
+const BRIDGE_PRESENCE_TTL_MS = Number(process.env.BRIDGE_PRESENCE_TTL_MS || 5 * 60 * 1000);
 
+function pruneBridgePresence(now = Date.now()) {
+  for (const [site, info] of bridgePresence.entries()) {
+    if (!info) {
+      bridgePresence.delete(site);
+      continue;
+    }
+    const age = now - (info.lastSeenTs || 0);
+    if (age > BRIDGE_PRESENCE_TTL_MS) {
+      bridgePresence.delete(site);
+    }
+  }
+}
 function pushToSse(site, payload){
   const set = sseClients.get(site);
   if (!set) return;
@@ -2229,6 +2243,49 @@ app.post('/api/fp/event', async (req, res) => {
     }
     const { site = 'default', data } = req.body || {};
     if (!data) return res.status(400).json({ ok:false, error:'missing data' });
+
+        if (data?.type === 'bridge_presence') {
+      const nowTs = Date.now();
+      pruneBridgePresence(nowTs);
+      const hints = Array.isArray(data.urlHints)
+        ? data.urlHints.map((value) => {
+            try { return String(value).trim(); }
+            catch { return null; }
+          }).filter(Boolean)
+        : [];
+      const addresses = Array.isArray(data.addresses)
+        ? data.addresses.map((entry) => {
+            if (!entry) return null;
+            const out = {};
+            if (entry.address) out.address = String(entry.address);
+            if (entry.interface) out.interface = String(entry.interface);
+            if (entry.family) out.family = String(entry.family);
+            if (entry.scopeid !== undefined && entry.scopeid !== null) out.scopeid = entry.scopeid;
+            if (entry.internal !== undefined) out.internal = !!entry.internal;
+            if (entry.mac) out.mac = String(entry.mac);
+            if (entry.netmask) out.netmask = String(entry.netmask);
+            return Object.keys(out).length ? out : null;
+          }).filter(Boolean)
+        : [];
+      const hostname = typeof data.hostname === 'string' ? data.hostname.trim() : '';
+      const base = typeof data.base === 'string' ? data.base.trim() : '';
+      const port = Number(data.port) || null;
+      const entry = {
+        site,
+        urlHints: hints,
+        addresses,
+        hostname: hostname || null,
+        base: base || null,
+        port,
+        lastSeen: new Date(nowTs).toISOString(),
+        lastSeenTs: nowTs,
+        reason: data.reason || null,
+        source: 'forward',
+        forwardedFor: req.get('x-forwarded-for') || req.ip || null
+      };
+      bridgePresence.set(site, entry);
+      return res.json({ ok: true });
+    }
 
     // 매핑 해석 (identify 성공시에만)
     let resolved = null;
@@ -2264,6 +2321,54 @@ app.post('/api/fp/event', async (req, res) => {
   }
 });
 
+app.get('/api/fp/bridge/hints', (req, res) => {
+  const site = String(req.query.site || 'default');
+  const allRaw = String(req.query.all || '').toLowerCase();
+  const includeAll = allRaw === '1' || allRaw === 'true' || allRaw === 'yes';
+  const maxAgeMsRaw = Number(req.query.maxAgeMs || req.query.max_age_ms || 0);
+  const effectiveTtl = Number.isFinite(maxAgeMsRaw) && maxAgeMsRaw > 0 ? maxAgeMsRaw : BRIDGE_PRESENCE_TTL_MS;
+  const nowTs = Date.now();
+  pruneBridgePresence(nowTs);
+
+  const isFresh = (info) => !!info && (nowTs - (info.lastSeenTs || 0)) <= effectiveTtl;
+  const sanitize = (siteKey, info) => ({
+    site: siteKey,
+    hints: Array.isArray(info?.urlHints) ? info.urlHints : [],
+    addresses: Array.isArray(info?.addresses) ? info.addresses : [],
+    hostname: info?.hostname || null,
+    base: info?.base || null,
+    port: info?.port || null,
+    last_seen: info?.lastSeen || null,
+    reason: info?.reason || null
+  });
+
+  if (includeAll) {
+    const entries = [];
+    for (const [key, value] of bridgePresence.entries()) {
+      if (!isFresh(value)) continue;
+      entries.push(sanitize(key, value));
+    }
+    return res.json({ ok: true, ttlMs: effectiveTtl, sites: entries });
+  }
+
+  const entry = bridgePresence.get(site);
+  if (!isFresh(entry)) {
+    return res.json({
+      ok: false,
+      site,
+      hints: [],
+      addresses: [],
+      hostname: null,
+      base: null,
+      port: null,
+      last_seen: null,
+      reason: null,
+      ttlMs: effectiveTtl
+    });
+  }
+
+  return res.json({ ok: true, ttlMs: effectiveTtl, ...sanitize(site, entry) });
+});
 
 
 // UI ← Render (SSE 실시간 스트림)
