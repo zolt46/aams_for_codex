@@ -24,6 +24,35 @@ const WebSocket = require('ws');
 const http = require('http');
 const { URL } = require('url');
 
+function sanitizeHttpsUrl(value, { allowHttp = false } = {}) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (err) {
+    warn('잘못된 URL 무시됨:', raw);
+    return '';
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol === 'https:') {
+    // ok
+  } else if (allowHttp && protocol === 'http:') {
+    warn('개발용 HTTP 주소 사용:', raw);
+  } else {
+    warn('HTTPS가 아닌 주소 무시됨:', raw);
+    return '';
+  }
+
+  parsed.hash = '';
+  parsed.search = '';
+  const origin = parsed.origin;
+  if (!origin) return '';
+  const pathname = parsed.pathname.replace(/\/$/, '');
+  return `${origin}${pathname}`;
+}
+
 const PORT_HINT      = process.env.FINGERPRINT_PORT || 'auto';
 const BAUD           = Number(process.env.FINGERPRINT_BAUD || 115200);
 const AUTO_IDENTIFY  = (process.env.AUTO_IDENTIFY || '0') === '1';
@@ -47,7 +76,22 @@ const ROBOT_DISABLED = (process.env.ROBOT_DISABLED || '') === '1';
 const ROBOT_FORWARD_URL = process.env.ROBOT_FORWARD_URL || process.env.RENDER_ROBOT_URL || FORWARD_URL || '';
 const ROBOT_FORWARD_TOKEN = process.env.ROBOT_FORWARD_TOKEN || process.env.RENDER_ROBOT_TOKEN || FORWARD_TOKEN || '';
 
+const ANNOUNCE_INSECURE_HINTS = (process.env.ANNOUNCE_INSECURE_HINTS || process.env.AAMS_ANNOUNCE_INSECURE || '0') === '1';
+const PUBLIC_BASE_URL_RAW =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.FP_PUBLIC_BASE ||
+  process.env.FP_TUNNEL_URL ||
+  process.env.RENDER_BRIDGE_PUBLIC_URL ||
+  '';
 const BRIDGE_ANNOUNCE_INTERVAL_MS = Number(process.env.BRIDGE_ANNOUNCE_INTERVAL_MS || 60000);
+
+const PUBLIC_BASE_URL = (() => {
+  const sanitized = sanitizeHttpsUrl(PUBLIC_BASE_URL_RAW);
+  if (!sanitized && PUBLIC_BASE_URL_RAW) {
+    warn('PUBLIC_BASE_URL 무시됨(HTTPS 필수):', PUBLIC_BASE_URL_RAW);
+  }
+  return sanitized;
+})();
 
 
 function log(...args){ console.log('[fp-bridge]', ...args); }
@@ -103,11 +147,12 @@ let lastAnnouncementSignature = '';
 let lastAnnouncementAt = 0;
 let lastAnnouncementError = null;
 
-function uniquePush(set, list, value) {
-  if (!value) return;
-  if (set.has(value)) return;
-  set.add(value);
-  list.push(value);
+function uniquePush(set, list, value, { allowHttp = false } = {}) {
+  const sanitized = sanitizeHttpsUrl(value, { allowHttp });
+  if (!sanitized) return;
+  if (set.has(sanitized)) return;
+  set.add(sanitized);
+  list.push(sanitized);
 }
 
 function collectDiscoverySnapshot() {
@@ -142,15 +187,19 @@ function collectDiscoverySnapshot() {
           host = `[${withoutZone}]`;
         }
       }
-      uniquePush(seenUrls, urlHints, `http://${host}:${LOCAL_PORT}`);
+      uniquePush(seenUrls, urlHints, `http://${host}:${LOCAL_PORT}`, { allowHttp: ANNOUNCE_INSECURE_HINTS });
     }
   }
 
   if (BRIDGE_HOSTNAME) {
-    uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}`);
+    uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}`, { allowHttp: ANNOUNCE_INSECURE_HINTS });
     if (!BRIDGE_HOSTNAME.includes('.')) {
-      uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}.local:${LOCAL_PORT}`);
+      uniquePush(seenUrls, urlHints, `http://${BRIDGE_HOSTNAME}.local:${LOCAL_PORT}`, { allowHttp: ANNOUNCE_INSECURE_HINTS });
     }
+  }
+
+  if (PUBLIC_BASE_URL) {
+    uniquePush(seenUrls, urlHints, PUBLIC_BASE_URL);
   }
 
   const snapshot = {
@@ -194,13 +243,17 @@ async function announceBridgePresence(reason = 'periodic') {
     return;
   }
 
-  const primaryUrl = snapshot?.urlHints?.[0] || (BRIDGE_HOSTNAME ? `http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}` : null);
+  const fallbackUrl =
+    ANNOUNCE_INSECURE_HINTS && BRIDGE_HOSTNAME
+      ? sanitizeHttpsUrl(`http://${BRIDGE_HOSTNAME}:${LOCAL_PORT}`, { allowHttp: true })
+      : null;
+  const primaryUrl = PUBLIC_BASE_URL || snapshot?.urlHints?.[0] || fallbackUrl;
   const payload = {
     type: 'bridge_presence',
     reason,
     hostname: snapshot?.hostname || null,
     port: snapshot?.port || LOCAL_PORT,
-    base: primaryUrl,
+    base: primaryUrl || null,
     urlHints: snapshot?.urlHints || [],
     addresses: snapshot?.addresses || [],
     timestamp: new Date().toISOString()
