@@ -46,6 +46,18 @@
 
   const DEFAULT_API_BASE = detectDefaultApiBase();
 
+  let resolveReady;
+  const configReadyPromise = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+
+  function markConfigReady() {
+    if (typeof resolveReady === 'function') {
+      resolveReady();
+      resolveReady = null;
+    }
+  }
+
   const STORAGE_KEYS = {
     API: 'AAMS_API_BASE',
     FP: 'AAMS_FP_LOCAL_BASE',
@@ -158,6 +170,11 @@
     }
     if (config.API_BASE !== sanitized) {
       config.API_BASE = sanitized;
+      try {
+        window.dispatchEvent(
+          new CustomEvent('aams:api-base-change', { detail: { base: sanitized, source } })
+        );
+      } catch (_) {}
     }
     if (persist) {
       writeStorage(STORAGE_KEYS.API, sanitized);
@@ -293,16 +310,73 @@
 
   async function discoverLocalApiBase({ failedBase = '' } = {}) {
     if (typeof window === 'undefined' || !window.location) return '';
-    const { protocol, hostname } = window.location;
+    const { protocol, hostname, port: locationPort } = window.location;
     if (!isLocalHostname(hostname || '')) return '';
 
     const proto = protocol && protocol.toLowerCase() === 'https:' ? 'https:' : 'http:';
-    const hostCandidates = new Set();
-    if (hostname) hostCandidates.add(hostname);
-    hostCandidates.add('localhost');
-    hostCandidates.add('127.0.0.1');
-    hostCandidates.add('::1');
-    hostCandidates.add('[::1]');
+    const hostSeen = new Set();
+    const hostCandidates = [];
+    const addHostCandidate = (value) => {
+      if (!value) return;
+      const trimmed = String(value).trim();
+      if (!trimmed) return;
+      const normalized = trimmed.toLowerCase();
+      if (hostSeen.has(normalized)) return;
+      hostSeen.add(normalized);
+      hostCandidates.push(trimmed);
+    };
+
+    addHostCandidate(hostname);
+    addHostCandidate('localhost');
+    addHostCandidate('127.0.0.1');
+    addHostCandidate('::1');
+    addHostCandidate('[::1]');
+
+    const portSeen = new Set();
+    const portCandidates = [];
+    const addPortCandidate = (value) => {
+      const num = Number(value);
+      if (!Number.isInteger(num) || num <= 0) return;
+      if (portSeen.has(num)) return;
+      portSeen.add(num);
+      portCandidates.push(num);
+    };
+
+    addPortCandidate(locationPort);
+    [8790, 8791, 3000, 3001, 8000, 8080, 5173, 4173, 5500].forEach(addPortCandidate);
+
+    const addHintsFromUrl = (value) => {
+      if (!value) return;
+      let parsed;
+      try {
+        parsed = new URL(value);
+      } catch (_) {
+        return;
+      }
+      if (parsed.hostname) addHostCandidate(parsed.hostname);
+      if (parsed.port) {
+        addPortCandidate(parsed.port);
+      } else if (parsed.protocol === 'http:' && proto === 'http:') {
+        // fingerprint bridge 기본 포트 추정
+        addPortCandidate(8790);
+      }
+    };
+
+    addHintsFromUrl(config?.API_BASE);
+    addHintsFromUrl(window?.AAMS_CONFIG?.API_BASE);
+    addHintsFromUrl(window?.AAMS_CONFIG?.LOCAL_FP_BASE);
+    addHintsFromUrl(window?.FP_LOCAL_BASE);
+
+    try {
+      const storedFp = readStorage(STORAGE_KEYS.FP);
+      addHintsFromUrl(storedFp);
+    } catch (_) {}
+
+    if (Array.isArray(window?.AAMS_BRIDGE_HINTS)) {
+      for (const hint of window.AAMS_BRIDGE_HINTS) {
+        addHintsFromUrl(hint);
+      }
+    }
 
     const normalizeHost = (host) => {
       if (!host) return '';
@@ -316,12 +390,11 @@
 
     const skipOrigin = failedBase || '';
     const seenOrigins = new Set();
-    const candidatePorts = [3000, 3001, 8000, 8080, 5173, 4173];
 
     for (const hostCandidate of hostCandidates) {
       const normalizedHost = normalizeHost(hostCandidate);
       if (!normalizedHost) continue;
-      for (const candidatePort of candidatePorts) {
+      for (const candidatePort of portCandidates) {
         if (!candidatePort) continue;
         const origin = `${proto}//${normalizedHost}:${candidatePort}`;
         if (origin === skipOrigin) continue;
@@ -365,7 +438,15 @@
       }
       return;
     }
-    if (failedBase !== REMOTE_API_BASE) {
+    const skipRemoteFallback = (() => {
+      if (typeof window === 'undefined' || !window.location) return false;
+      const { protocol, hostname } = window.location;
+      if ((protocol || '').toLowerCase() === 'http:' && isLocalHostname(hostname || '')) {
+        return true;
+      }
+      return false;
+    })();
+    if (!skipRemoteFallback && failedBase !== REMOTE_API_BASE) {
       const applied = setApiBase(REMOTE_API_BASE, {
         source: 'remote-fallback',
         force: true
@@ -374,6 +455,8 @@
         console.info('[AAMS][config] Render 백엔드로 폴백:', REMOTE_API_BASE);
         await fetchRemoteEnv();
       }
+    } else if (skipRemoteFallback) {
+      console.warn('[AAMS][config] 로컬 개발 환경에서는 Render 폴백을 건너뜁니다. 로컬 서버 상태를 확인하세요.');
     }
   }
 
@@ -410,7 +493,10 @@
     }
   }
 
+  config.ready = configReadyPromise;
+
   window.AAMS_CONFIG = config;
+  window.AAMS_CONFIG_READY = configReadyPromise;
   window.FP_LOCAL_BASE = config.LOCAL_FP_BASE;
   window.FP_SITE = window.FP_SITE || 'site-01';
 
@@ -422,5 +508,13 @@
     applyEnv(window.__AAMS_ENV__);
   }
 
-  fetchRemoteEnv();
+  (async () => {
+    try {
+      await fetchRemoteEnv();
+    } catch (err) {
+      console.warn('[AAMS][config] 초기 환경 로딩 실패', err);
+    } finally {
+      markConfigReady();
+    }
+  })();
 })();
