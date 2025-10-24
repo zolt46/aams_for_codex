@@ -1,6 +1,41 @@
 (function () {
-  const DEFAULT_API_BASE = 'https://aams-api.onrender.com';
+  const REMOTE_API_BASE = 'https://aams-api.onrender.com';
   const DEFAULT_FP_BASE = '';
+
+  function isLocalHostname(hostname) {
+    if (!hostname) return false;
+    const host = hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+      return true;
+    }
+    if (/^127\./.test(host)) return true;
+    if (/^192\.168\./.test(host)) return true;
+    if (/^10\./.test(host)) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+      if (window.location.hostname.toLowerCase() === host) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function detectDefaultApiBase() {
+    if (typeof window === 'undefined' || !window.location) {
+      return REMOTE_API_BASE;
+    }
+    const { protocol, host, hostname } = window.location;
+    if (!protocol || !host) {
+      return REMOTE_API_BASE;
+    }
+    const lowerProtocol = protocol.toLowerCase();
+    if (lowerProtocol === 'http:' || isLocalHostname(hostname || '')) {
+      return `${lowerProtocol}//${host}`;
+    }
+    return REMOTE_API_BASE;
+  }
+
+  const DEFAULT_API_BASE = detectDefaultApiBase();
 
   const STORAGE_KEYS = {
     API: 'AAMS_API_BASE',
@@ -20,9 +55,11 @@
       return '';
     }
     const protocol = parsed.protocol.toLowerCase();
+    const hostname = parsed.hostname || '';
+    const usingLocalHttp = protocol === 'http:' && isLocalHostname(hostname);
     if (protocol === 'https:') {
       // ok
-    } else if (allowHttp && protocol === 'http:') {
+    } else if ((allowHttp || usingLocalHttp) && protocol === 'http:') {
       console.warn('[AAMS][config] 개발용 HTTP 주소 사용:', raw);
     } else {
       console.warn('[AAMS][config] HTTPS가 아닌 주소 무시됨:', raw);
