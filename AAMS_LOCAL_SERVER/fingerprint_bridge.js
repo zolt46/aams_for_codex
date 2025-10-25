@@ -19,12 +19,36 @@ const { SerialPort } = require('serialport');
 const { ReadlineParser } = require('@serialport/parser-readline');
 const WebSocket = require('ws');
 
+function normalizeBackendWsUrl(raw) {
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    url.pathname = '/ws';
+    url.search = url.search || '';
+    return url.toString().replace(/\/$/, '');
+  } catch (err) {
+    if (/^wss?:\/\//i.test(raw)) {
+      const [base, query] = raw.split('?');
+      const trimmed = base.replace(/\/+$/, '');
+      const withPath = /\/ws$/i.test(trimmed) ? trimmed : `${trimmed}/ws`;
+      return query ? `${withPath}?${query}` : withPath;
+    }
+    return raw;
+  }
+}
+
 const PORT_HINT      = process.env.FINGERPRINT_PORT || 'auto';
 const BAUD           = Number(process.env.FINGERPRINT_BAUD || 115200);
 const AUTO_IDENTIFY  = (process.env.AUTO_IDENTIFY || '0') === '1';
 const IDENTIFY_BACKOFF_MS = Number(process.env.IDENTIFY_BACKOFF_MS || 300);
 
-const BACKEND_WS_URL = process.env.RENDER_WSS_URL || process.env.RENDER_WS_URL || process.env.RENDER_FP_WS_URL || process.env.RENDER_FP_URL || '';
+const BACKEND_WS_URL = normalizeBackendWsUrl(
+  process.env.RENDER_WSS_URL
+  || process.env.RENDER_WS_URL
+  || process.env.RENDER_FP_WS_URL
+  || process.env.RENDER_FP_URL
+  || ''
+);
 const FORWARD_TOKEN  = process.env.RENDER_FP_TOKEN || '';
 const FP_SITE        = process.env.FP_SITE || 'default';
 
