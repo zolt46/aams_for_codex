@@ -83,6 +83,7 @@ const robotState = {
 };
 
 const timeNow = () => Date.now();
+
 function scheduleReconnect() {
   if (reconnectTimer) return;
   if (!BACKEND_WS_URL) return;
@@ -122,7 +123,7 @@ function sendToBackend(message) {
   }
 }
 
-function handleBackendMessage(ws, data) {
+async function handleBackendMessage(ws, data) {
   const text = typeof data === 'string' ? data : data?.toString?.();
   if (!text) return;
   let message;
@@ -247,7 +248,7 @@ function handleBackendMessage(ws, data) {
         ok: true,
         result,
         payload: result,
-        sensorId: result?.id ?? Number(sensorId) || null,
+        sensorId: result?.id ?? (Number(sensorId) || null),
         requestId
       });
     } catch (err) {
@@ -386,7 +387,12 @@ function connectToBackend() {
     flushBackendQueue();
   });
 
-  ws.on('message', (data) => handleBackendMessage(ws, data));
+  ws.on('message', (data) => {
+    Promise.resolve(handleBackendMessage(ws, data)).catch((err) => {
+      warn('backend message handler failed:', err?.message || err);
+    });
+  });
+
 
   ws.on('close', () => {
     backendConnecting = false;
