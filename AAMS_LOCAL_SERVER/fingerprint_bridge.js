@@ -431,6 +431,17 @@ function connectToBackend() {
   ws.on('error', (err) => {
     warn('backend ws error:', err?.message || err);
   });
+
+  ws.on('unexpected-response', (_req, res) => {
+    backendConnecting = false;
+    backendAuthenticated = false;
+    const status = res?.statusCode;
+    const statusMessage = res?.statusMessage;
+    warn('backend ws unexpected response:', status, statusMessage);
+    try { res?.resume?.(); } catch (_) {}
+    forwardStatus.lastErrorAt = timeNow();
+    scheduleReconnect();
+  });
 }
 let backendWs = null;
 let backendAuthenticated = false;
