@@ -957,10 +957,10 @@ class MissionController:
         try:
             if self.with_mag:
                 try:
-                    self.rail_ensure_extended()
+                    self.bc.gripper_close()
                 except Exception as err:
-                    self._emit_log(stage, f"레일 배출 실패: {err}", level='error', meta=info_meta)
-                    print(f"[LOCKDOWN] 레일 배출 중 오류: {err}")
+                    self._emit_log(stage, f"그리퍼 상태 확인 실패: {err}", level='warning', meta=info_meta)
+                    print(f"[LOCKDOWN] 그리퍼 확인 중 오류: {err}")
                 try:
                     self._recover_mag_failure_outbound()
                     self._emit_log(stage, "탄창을 원위치에 복귀했습니다.", level='info', meta=info_meta)
