@@ -7,6 +7,8 @@
 // {"cmd":"delete","id":12}
 // {"cmd":"clear"}
 // {"cmd":"count"}
+// {"cmd":"buzzer","state":"on"}
+// {"cmd":"buzzer","state":"off"}
 
 #include <Arduino.h>
 #include <limits.h>
