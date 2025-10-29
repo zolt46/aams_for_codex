@@ -12,6 +12,11 @@
 #include <limits.h>
 #include <Adafruit_Fingerprint.h>
 
+// ---------- Relay/Buzzer control ----------
+#ifndef BUZZER_PIN
+#define BUZZER_PIN 10
+#endif
+
 #ifndef FINGERPRINT_LED_COLOR_RED
   #ifdef FINGERPRINT_LED_RED
     #define FINGERPRINT_LED_COLOR_RED FINGERPRINT_LED_RED
@@ -64,6 +69,15 @@ void ok(const String &type, const String &kv=""){
   o+='}'; jprintln(o);
 }
 void err(const String &m){ jprintln(String("{\"ok\":false,\"error\":\"")+m+"\"}"); }
+
+bool buzzerActive = false;
+
+void setBuzzer(bool on){
+#if defined(BUZZER_PIN)
+  digitalWrite(BUZZER_PIN, on ? HIGH : LOW);
+#endif
+  buzzerActive = on;
+}
 
 int parseIntField(const String &line, const char *key){
   String k = String("\"")+key+"\"";
@@ -241,6 +255,29 @@ void handleLine(const String &line){
     return;
   }
 
+  if (line.indexOf("\"buzzer\"")>=0){
+    String state = parseStringField(line, "state");
+    if (!state.length()) state = parseStringField(line, "mode");
+    if (!state.length()) state = parseStringField(line, "command");
+    bool turnOn = false;
+    bool hasState = state.length();
+    if (hasState){
+      String lower = state; lower.toLowerCase();
+      turnOn = (lower == "on" || lower == "1" || lower == "true" || lower == "high");
+    } else {
+      int value = parseIntField(line, "value");
+      if (value == INT_MIN) value = parseIntField(line, "on");
+      if (value != INT_MIN) { turnOn = (value != 0); hasState = true; }
+    }
+    if (!hasState){
+      err("missing_buzzer_state");
+      return;
+    }
+    setBuzzer(turnOn);
+    ok("buzzer", String("\"state\":\"") + (turnOn ? "on" : "off") + "\",\"active\":" + (buzzerActive ? "true" : "false"));
+    return;
+  }
+
   err("unknown_cmd");
 }
 
@@ -248,6 +285,10 @@ void handleLine(const String &line){
 void setup(){
   Serial.begin(115200);
   delay(200);
+#if defined(BUZZER_PIN)
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+#endif
 #if FP_USE_HWSERIAL
   FP_HW.begin(57600); finger.begin(57600);
 #else
