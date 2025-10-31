@@ -5,6 +5,7 @@
 
 import { apiGet } from './api.js';
 import { toast } from './toast.js';
+import { onLockdownChange, getLockdownState } from './lockdown.js';
 
 const CSS_ID = 'dash-summary-style-v2';
 
@@ -77,6 +78,7 @@ function renderSummary(container, data){
 }
 
 (async function main(){
+  setupLockdownOverlay();
   try{
     const wrap = document.querySelector('.dashboard-summary');
     if(!wrap) return;
@@ -126,3 +128,42 @@ function renderSummary(container, data){
     toast('대시보드 요약 로딩 실패','error');
   }
 })();
+
+function setupLockdownOverlay(){
+  const overlay = document.getElementById('lockdown-overlay');
+  if (!overlay) return;
+  const issuedAtEl = document.getElementById('lockdownIssuedAt');
+  const issuedByEl = document.getElementById('lockdownIssuedBy');
+  const reasonEl = document.getElementById('lockdownReason');
+
+  const render = (state) => {
+    if (!state?.active) {
+      overlay.hidden = true;
+      return;
+    }
+    overlay.hidden = false;
+    if (issuedAtEl) {
+      issuedAtEl.textContent = state.triggeredAt
+        ? new Date(state.triggeredAt).toLocaleString('ko-KR')
+        : '-';
+    }
+    if (issuedByEl) {
+      const actor = state.triggeredBy;
+      if (actor?.name) {
+        const rank = actor.rank ? `${actor.rank} ` : '';
+        issuedByEl.textContent = `${rank}${actor.name}`.trim();
+      } else {
+        issuedByEl.textContent = '-';
+      }
+    }
+    if (reasonEl) {
+      const message = state.message || null;
+      const reason = state.reason || null;
+      const label = message ? message : (reason ? `사유: ${reason}` : '사유: 긴급 대응');
+      reasonEl.textContent = label;
+    }
+  };
+
+  onLockdownChange(render);
+  render(getLockdownState());
+}

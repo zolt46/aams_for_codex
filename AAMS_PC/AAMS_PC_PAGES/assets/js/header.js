@@ -1,11 +1,13 @@
 import { injectHeader } from './dom.js';
 import { guard, initHeaderRoleRouting, wireLogout } from './auth.js';
+import { bootLockdownButton } from './lockdown.js';
 
 export async function bootHeader() {
   guard();
   await injectHeader();          // 1) 무조건 헤더 먼저 붙임
   initHeaderRoleRouting();
   wireLogout();
+  bootLockdownButton();
 
   // 2) health.js는 동적 import로 로드 실패해도 상단바는 유지
   try {
