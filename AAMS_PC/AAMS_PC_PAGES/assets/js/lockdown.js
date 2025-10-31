@@ -162,7 +162,27 @@ async function handleButtonClick() {
 
 export function bootLockdownButton() {
   if (buttonEl) return;
-  buttonEl = document.getElementById('lockdownBtn');
+
+  const candidate = document.getElementById('lockdownBtn');
+  const auth = currentUser();
+
+  const pageName = (() => {
+    if (typeof window === 'undefined') return '';
+    const path = window.location?.pathname || '';
+    const last = path.split('/').pop() || '';
+    return last.split('?')[0];
+  })();
+  const isAdminMainPage = pageName === 'main_page_new_test.html';
+
+  if (!auth?.is_admin || !isAdminMainPage) {
+    if (candidate) candidate.remove();
+    buttonEl = null;
+    ensurePolling();
+    fetchState();
+    return;
+  }
+
+  buttonEl = candidate;
   if (!buttonEl) {
     ensurePolling();
     fetchState();
