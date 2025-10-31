@@ -284,6 +284,10 @@ a{color:inherit}
 #lockdown-overlay .lockdown-body{max-width:620px;line-height:1.6;font-size:1.05rem;color:#ffeaea}
 #lockdown-overlay .lockdown-meta{display:flex;flex-direction:column;gap:8px;font-size:.95rem;color:#ffcccc}
 #lockdown-overlay .lockdown-meta span strong{color:#fff}
+.lockdown-actions{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:12px}
+.lockdown-release-btn{padding:14px 32px;border-radius:999px;border:none;background:#ff5959;color:#fff;font-size:1.05rem;font-weight:800;letter-spacing:.04em;box-shadow:0 0 24px rgba(255,96,96,.5);cursor:pointer;transition:transform .2s,box-shadow .2s,background .2s}
+.lockdown-release-btn:hover{background:#ff7070;box-shadow:0 0 32px rgba(255,120,120,.55);transform:translateY(-1px)}
+.lockdown-release-btn:disabled,.lockdown-release-btn[data-state="busy"]{opacity:.7;cursor:wait;transform:none;box-shadow:0 0 12px rgba(255,64,64,.3)}
 .lockdown-indicator{display:inline-flex;align-items:center;gap:10px;padding:12px 20px;border-radius:999px;background:rgba(255,64,64,.2);border:1px solid rgba(255,96,96,.45);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#ffbebe}
 .lockdown-indicator .dot{width:12px;height:12px;border-radius:50%;background:#ff5252;box-shadow:0 0 14px rgba(255,64,64,.85);animation:blink-dot 1s ease-in-out infinite}
 @keyframes blink-dot{0%,100%{opacity:1}50%{opacity:.25}}

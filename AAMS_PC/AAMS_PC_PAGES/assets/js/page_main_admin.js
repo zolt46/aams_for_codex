@@ -5,7 +5,8 @@
 
 import { apiGet } from './api.js';
 import { toast } from './toast.js';
-import { onLockdownChange, getLockdownState } from './lockdown.js';
+import { currentUser } from './auth.js';
+import { onLockdownChange, getLockdownState, requestLockdownRelease } from './lockdown.js';
 
 const CSS_ID = 'dash-summary-style-v2';
 
@@ -135,13 +136,51 @@ function setupLockdownOverlay(){
   const issuedAtEl = document.getElementById('lockdownIssuedAt');
   const issuedByEl = document.getElementById('lockdownIssuedBy');
   const reasonEl = document.getElementById('lockdownReason');
+  const releaseBtn = document.getElementById('lockdownReleaseBtn');
+
+  if (releaseBtn) {
+    const auth = currentUser();
+    if (!auth?.is_admin) {
+      releaseBtn.remove();
+    } else {
+      releaseBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        if (releaseBtn.dataset.state === 'busy') return;
+        releaseBtn.dataset.state = 'busy';
+        releaseBtn.disabled = true;
+        try {
+          const requested = await requestLockdownRelease({ requireConfirm: true });
+          if (!requested) {
+            releaseBtn.disabled = false;
+            releaseBtn.dataset.state = 'idle';
+            return;
+          }
+        } catch (err) {
+          console.warn('[AAMS][lockdown] overlay release failed', err);
+        } finally {
+          releaseBtn.disabled = false;
+          releaseBtn.dataset.state = 'idle';
+        }
+      });
+    }
+  }
 
   const render = (state) => {
     if (!state?.active) {
       overlay.hidden = true;
+      if (releaseBtn) {
+        releaseBtn.dataset.state = 'idle';
+        releaseBtn.hidden = true;
+        releaseBtn.disabled = false;
+      }
       return;
     }
     overlay.hidden = false;
+    if (releaseBtn) {
+      releaseBtn.hidden = false;
+      releaseBtn.disabled = false;
+      releaseBtn.dataset.state = 'idle';
+    }
     if (issuedAtEl) {
       issuedAtEl.textContent = state.triggeredAt
         ? new Date(state.triggeredAt).toLocaleString('ko-KR')

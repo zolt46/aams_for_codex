@@ -1,9 +1,12 @@
 import { apiGet, apiPost } from './api.js';
+import { API_BASE } from './config.js';
 import { toast } from './toast.js';
 import { currentUser } from './auth.js';
 
 const LISTENERS = new Set();
 const POLL_INTERVAL_MS = 8000;
+const WS_RETRY_MIN = 2000;
+const WS_RETRY_MAX = 20000;
 let state = {
   active: false,
   triggeredAt: null,
@@ -16,9 +19,187 @@ let state = {
 let pollTimer = null;
 let buttonEl = null;
 let isPolling = false;
+let ws = null;
+let wsSite = null;
+let wsReady = false;
+let wsRetryTimer = null;
+let wsRetryDelay = WS_RETRY_MIN;
 
 function cloneState() {
   return { ...state };
+}
+
+function resolveConfigValue(key) {
+  if (typeof window === 'undefined') return null;
+  const cfg = window.AAMS_CONFIG || {};
+  const normalized = typeof key === 'string' ? key : String(key || '');
+  const candidates = [normalized, normalized.toLowerCase(), normalized.toUpperCase()];
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(cfg, candidate)) {
+      const value = cfg[candidate];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+  return null;
+}
+
+function resolveApiBase() {
+  const override = resolveConfigValue('API_BASE') || resolveConfigValue('api_base');
+  if (override) return override;
+  if (typeof API_BASE === 'string' && API_BASE.trim()) return API_BASE;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return '';
+}
+
+function resolveWsBase() {
+  const override = resolveConfigValue('WSS_BASE') || resolveConfigValue('WS_BASE');
+  if (override) return override;
+  const apiBase = resolveApiBase();
+  if (apiBase.startsWith('https://')) return apiBase.replace(/^https:/i, 'wss:');
+  if (apiBase.startsWith('http://')) return apiBase.replace(/^http:/i, 'ws:');
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    if (origin.startsWith('https://')) return origin.replace(/^https:/i, 'wss:');
+    if (origin.startsWith('http://')) return origin.replace(/^http:/i, 'ws:');
+  }
+  return '';
+}
+
+function resolveWsUrl() {
+  const base = resolveWsBase();
+  if (!base) return '';
+  return `${base.replace(/\/+$/, '')}/ws`;
+}
+
+function resolveSite() {
+  if (typeof window === 'undefined') return 'default';
+  const fromConfig = resolveConfigValue('SITE') || resolveConfigValue('site');
+  if (fromConfig) return fromConfig;
+  const explicit = typeof window.AAMS_SITE === 'string' && window.AAMS_SITE.trim()
+    ? window.AAMS_SITE.trim()
+    : null;
+  if (explicit) return explicit;
+  const fpSite = typeof window.FP_SITE === 'string' && window.FP_SITE.trim()
+    ? window.FP_SITE.trim()
+    : null;
+  if (fpSite) return fpSite;
+  return 'default';
+}
+
+function resetWsBackoff() {
+  wsRetryDelay = WS_RETRY_MIN;
+  if (wsRetryTimer) {
+    clearTimeout(wsRetryTimer);
+    wsRetryTimer = null;
+  }
+}
+
+function scheduleWsReconnect() {
+  if (wsRetryTimer) return;
+  wsRetryTimer = setTimeout(() => {
+    wsRetryTimer = null;
+    connectLockdownSocket();
+  }, wsRetryDelay);
+  wsRetryDelay = Math.min(wsRetryDelay * 1.5, WS_RETRY_MAX);
+}
+
+function requestLockdownStatus() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const site = wsSite || resolveSite();
+  try {
+    ws.send(JSON.stringify({ type: 'LOCKDOWN_STATUS_REQUEST', site }));
+  } catch (err) {
+    console.warn('[AAMS][lockdown] 상태 요청 전송 실패', err);
+  }
+}
+
+function handleWsMessage(event) {
+  const raw = event?.data;
+  if (!raw) return;
+  let message;
+  try {
+    message = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(String(raw));
+  } catch (err) {
+    console.warn('[AAMS][lockdown] WS 메시지 파싱 실패', err);
+    return;
+  }
+  const type = message?.type;
+  if (type === 'AUTH_ACK') {
+    if (message.site && wsSite && message.site !== wsSite) return;
+    wsReady = true;
+    resetWsBackoff();
+    requestLockdownStatus();
+    return;
+  }
+  if (type === 'LOCKDOWN_STATUS') {
+    if (message.site && wsSite && message.site !== wsSite) return;
+    setState(message);
+    return;
+  }
+  if (type === 'LOCKDOWN_TRIGGER') {
+    if (message.site && wsSite && message.site !== wsSite) return;
+    setState({ ...message, active: true });
+    return;
+  }
+  if (type === 'LOCKDOWN_RELEASE') {
+    if (message.site && wsSite && message.site !== wsSite) return;
+    setState({ ...message, active: false });
+  }
+}
+
+function handleWsClose() {
+  wsReady = false;
+  ws = null;
+  scheduleWsReconnect();
+}
+
+function handleWsError(err) {
+  console.warn('[AAMS][lockdown] WS 오류', err?.message || err);
+}
+
+function handleWsOpen() {
+  resetWsBackoff();
+  wsReady = false;
+  wsSite = resolveSite();
+  try {
+    ws.send(JSON.stringify({ type: 'AUTH_UI', site: wsSite }));
+  } catch (err) {
+    console.warn('[AAMS][lockdown] WS 인증 요청 실패', err);
+  }
+}
+
+function connectLockdownSocket() {
+  if (typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  const url = resolveWsUrl();
+  if (!url) {
+    scheduleWsReconnect();
+    return;
+  }
+  try {
+    ws = new WebSocket(url);
+  } catch (err) {
+    console.warn('[AAMS][lockdown] WS 연결 실패', err);
+    ws = null;
+    scheduleWsReconnect();
+    return;
+  }
+  wsSite = resolveSite();
+  wsReady = false;
+  ws.addEventListener('open', handleWsOpen);
+  ws.addEventListener('close', handleWsClose);
+  ws.addEventListener('error', handleWsError);
+  ws.addEventListener('message', handleWsMessage);
+}
+
+function ensureSocket() {
+  if (typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  connectLockdownSocket();
 }
 
 function emit() {
@@ -183,6 +364,8 @@ export function bootLockdownButton() {
 
   const isAdminMainPage = isAdminMainContext();
 
+  ensureSocket();
+
   if (!auth?.is_admin || !isAdminMainPage) {
     if (candidate) candidate.remove();
     buttonEl = null;
@@ -227,6 +410,15 @@ export function getLockdownState() {
   return cloneState();
 }
 
+export async function requestLockdownRelease({ requireConfirm = true } = {}) {
+  if (requireConfirm && !confirmRelease()) {
+    return false;
+  }
+  await releaseLockdown();
+  return true;
+}
+
 // 초기 상태 동기화
 fetchState();
 ensurePolling();
+ensureSocket();
