@@ -160,19 +160,28 @@ async function handleButtonClick() {
   await triggerLockdown();
 }
 
+function isAdminMainContext() {
+  if (typeof document !== 'undefined') {
+    const pageFlag = document.body?.dataset?.page;
+    if (pageFlag) return pageFlag === 'admin-main';
+  }
+  if (typeof window !== 'undefined') {
+    const path = window.location?.pathname || '';
+    const last = path.split('/').pop() || '';
+    const pageName = last.split('?')[0];
+    if (pageName) return pageName === 'main_page_new_test.html';
+  }
+  return false;
+}
+
+
 export function bootLockdownButton() {
   if (buttonEl) return;
 
   const candidate = document.getElementById('lockdownBtn');
   const auth = currentUser();
 
-  const pageName = (() => {
-    if (typeof window === 'undefined') return '';
-    const path = window.location?.pathname || '';
-    const last = path.split('/').pop() || '';
-    return last.split('?')[0];
-  })();
-  const isAdminMainPage = pageName === 'main_page_new_test.html';
+  const isAdminMainPage = isAdminMainContext();
 
   if (!auth?.is_admin || !isAdminMainPage) {
     if (candidate) candidate.remove();
