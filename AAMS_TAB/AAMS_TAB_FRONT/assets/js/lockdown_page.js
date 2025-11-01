@@ -1,7 +1,7 @@
 import { mountMobileHeader } from "./util.js";
 import { connectWebSocket, onWebSocketEvent, sendWebSocketMessage } from "./api.js";
 
-const SITE = window.FP_SITE || "default";
+const SITE = window.FP_SITE || "site-01";
 const LOCKDOWN_SESSION_FLAG = "AAMS_LOCKDOWN_MODE";
 
 let unsubscribes = [];
@@ -58,6 +58,7 @@ function handleStatus(message) {
   if (active) {
     sessionStorage.setItem(LOCKDOWN_SESSION_FLAG, "1");
     document.body.classList.add("lockdown-mode");
+    sendWebSocketMessage({ type: "FP_STOP_REQUEST", site: SITE, reason: "lockdown", turnOffLed: true });
     updateDisplay(message || {});
     setGuard(true);
     if (location.hash !== "#/lockdown") {
@@ -66,6 +67,7 @@ function handleStatus(message) {
   } else {
     sessionStorage.removeItem(LOCKDOWN_SESSION_FLAG);
     document.body.classList.remove("lockdown-mode");
+    sendWebSocketMessage({ type: "FP_STOP_REQUEST", site: SITE, reason: "lockdown_cleared", turnOffLed: true });
     setGuard(false);
     unsubscribes.forEach((fn) => { try { fn(); } catch (_) {} });
     unsubscribes = [];
@@ -88,6 +90,7 @@ export async function initLockdownPage() {
   setGuard(true);
 
   connectWebSocket(SITE);
+  sendWebSocketMessage({ type: "FP_STOP_REQUEST", site: SITE, reason: "lockdown", turnOffLed: true });
   const off = onWebSocketEvent("LOCKDOWN_STATUS", (msg) => {
     if (msg?.site && msg.site !== SITE) return;
     handleStatus(msg);
