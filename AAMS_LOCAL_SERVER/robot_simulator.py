@@ -49,12 +49,68 @@ class SimulationAbort(RuntimeError):
     """사용자 또는 외부 명령으로 취소된 경우"""
 
 
-def ensure_json(value: str) -> Dict[str, Any]:
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"유효하지 않은 JSON 형식입니다: {exc}") from exc
+def parse_jsonish(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
 
+
+def as_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def coerce_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text:
+            return None
+        if text in {"true", "1", "yes", "y", "on"}:
+            return True
+        if text in {"false", "0", "no", "n", "off"}:
+            return False
+    return None
+
+
+def coerce_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            return float(text)
+        except ValueError:
+            try:
+                normalized = text.replace(",", ".")
+                return float(normalized)
+            except ValueError:
+                return default
+    return default
+
+
+def pick_bool(*values: Any, default: Optional[bool] = False) -> Optional[bool]:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return value
+        parsed = coerce_bool(value)
+        if parsed is not None:
+            return parsed
+    return default
 
 class CommandStream:
     """stdin 으로 전달되는 JSON 명령을 읽어오는 헬퍼"""
@@ -219,6 +275,23 @@ class EventEmitter:
         payload.setdefault("summary", summary)
         self.emit(payload)
 
+def _coerce_int(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            if "." in text:
+                return int(float(text))
+            return int(text)
+        except ValueError:
+            return default
+    return default
+
 
 def simulate_delay(stage: str, simulate_cfg: Dict[str, Any]) -> None:
     delay_cfg = simulate_cfg.get("delay") if isinstance(simulate_cfg, dict) else None
@@ -226,15 +299,18 @@ def simulate_delay(stage: str, simulate_cfg: Dict[str, Any]) -> None:
     max_ms = 900
     if isinstance(delay_cfg, dict):
         stage_cfg = delay_cfg.get(stage)
-        min_ms = int(delay_cfg.get("min", min_ms))
-        max_ms = int(delay_cfg.get("max", max_ms))
+        min_ms = _coerce_int(delay_cfg.get("min"), min_ms)
+        max_ms = _coerce_int(delay_cfg.get("max"), max_ms)
         if isinstance(stage_cfg, dict):
-            min_ms = int(stage_cfg.get("min", min_ms))
-            max_ms = int(stage_cfg.get("max", max_ms))
-        elif isinstance(stage_cfg, (int, float)):
-            min_ms = max_ms = int(stage_cfg)
-    elif isinstance(delay_cfg, (int, float)):
-        min_ms = max_ms = int(delay_cfg)
+            min_ms = _coerce_int(stage_cfg.get("min"), min_ms)
+            max_ms = _coerce_int(stage_cfg.get("max"), max_ms)
+        elif stage_cfg is not None:
+            min_ms = max_ms = _coerce_int(stage_cfg, max_ms)
+    elif delay_cfg is not None:
+        min_ms = max_ms = _coerce_int(delay_cfg, min_ms)
+
+    min_ms = max(0, min_ms)
+    max_ms = max(min_ms, max_ms)
     time.sleep(random.uniform(min_ms, max_ms) / 1000.0)
 
 def resolve_direction(raw: Optional[str]) -> str:
@@ -268,12 +344,12 @@ def resolve_mission_number(raw: Optional[Any], fallback: int = 1) -> int:
     return fallback
 
 
-def merge_simulate_config(base: Optional[Dict[str, Any]], extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def merge_simulate_config(*configs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {}
-    if isinstance(base, dict):
-        merged.update(base)
-    if isinstance(extra, dict):
-        merged.update(extra)
+    for cfg in configs:
+        data = parse_jsonish(cfg)
+        if data:
+            merged.update(data)
     return merged
 
 
@@ -348,8 +424,8 @@ def run_vision_checks(emitter: EventEmitter, simulate_cfg: Dict[str, Any]) -> No
 
 
 def build_simulator_options(args: argparse.Namespace, payload: Optional[Dict[str, Any]]) -> SimulatorOptions:
-    payload = payload or {}
-    bridge_payload = payload.get("bridgePayload") if isinstance(payload.get("bridgePayload"), dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    bridge_payload = as_dict(payload.get("bridgePayload"))
 
     request_id = (
         args.request_id
@@ -382,13 +458,18 @@ def build_simulator_options(args: argparse.Namespace, payload: Optional[Dict[str
         or mission_label
         or 1
     )
-    includes_ammo = bool(
-        args.with_mag
-        or payload.get("includesAmmo")
-        or bridge_payload.get("includesAmmo")
-        or payload.get("includes", {}).get("ammo")
-        or bridge_payload.get("includes", {}).get("ammo")
+
+    includes_dict = as_dict(payload.get("includes"))
+    bridge_includes = as_dict(bridge_payload.get("includes"))
+    includes_ammo = True if args.with_mag else bool(
+        pick_bool(
+            payload.get("includesAmmo"),
+            bridge_payload.get("includesAmmo"),
+            includes_dict.get("ammo"),
+            bridge_includes.get("ammo"),
+        )
     )
+
     site = (
         args.site
         or payload.get("site")
@@ -399,47 +480,49 @@ def build_simulator_options(args: argparse.Namespace, payload: Optional[Dict[str
 
     simulate_cfg = merge_simulate_config(payload.get("simulate"), args.simulate)
 
-    await_cfg = payload.get("await") if isinstance(payload.get("await"), dict) else {}
+    await_cfg = as_dict(payload.get("await"))
     await_stage = args.await_stage or await_cfg.get("stage")
-    await_user = args.await_user or await_cfg.get("enabled", False)
-    await_timeout = args.await_timeout if args.await_timeout is not None else await_cfg.get("timeout", 6.0)
-    await_message = args.await_message or await_cfg.get("message", "사용자 확인 대기")
+    await_enabled = args.await_user or pick_bool(await_cfg.get("enabled"))
+    await_timeout_raw = args.await_timeout if args.await_timeout is not None else await_cfg.get("timeout", 6.0)
+    await_message = args.await_message or await_cfg.get("message") or "사용자 확인 대기"
 
-    if await_user is False and args.await_user_auto:
-        await_user = True
+    if not await_enabled and args.await_user_auto:
+        await_enabled = True
         if not await_stage:
             await_stage = "handover" if direction == "out" else "stow"
 
-    if await_user and not await_stage:
+    if await_enabled and not await_stage:
         await_stage = "handover" if direction == "out" else "stow"
+
+    await_timeout = coerce_float(await_timeout_raw, 6.0)
 
     return SimulatorOptions(
         request_id=request_id,
         mission_label=mission_label,
         mission_number=mission_number,
         direction=direction,
-        includes_ammo=includes_ammo,
+        includes_ammo=bool(includes_ammo),
         site=site,
         simulate_cfg=simulate_cfg,
-        await_user=bool(await_user),
+        await_user=bool(await_enabled),
         await_stage=await_stage,
-        await_timeout=float(await_timeout or 6.0),
+        await_timeout=await_timeout,
         await_message=str(await_message),
     )
 
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AAMS 로봇/레일 모의 실행기")
-    parser.add_argument("--mission", type=int, help="미션 번호 (1 또는 2)")
+    parser.add_argument("--mission", help="미션 번호 (1 또는 2)")
     parser.add_argument("--mission-label", help="미션/보관함 레이블")
-    parser.add_argument("--direction", choices=["in", "out"], help="불입(in) 또는 불출(out)")
+    parser.add_argument("--direction", help="불입(in) 또는 불출(out)")
     parser.add_argument("--with-mag", action="store_true", help="탄창 포함 여부")
     parser.add_argument("--expected-qr", help="호환성용 인자 — 사용되지 않음")
     parser.add_argument("--bridge-mode", action="store_true", help="브릿지 모드 (호환성용)")
     parser.add_argument("--auto", action="store_true", help="자동 실행 모드 (호환성용)")
     parser.add_argument("--request-id", help="요청 ID")
     parser.add_argument("--site", help="사이트 식별자")
-    parser.add_argument("--simulate", type=ensure_json, help="시뮬레이션 동작을 제어할 JSON 문자열")
+    parser.add_argument("--simulate", help="시뮬레이션 동작을 제어할 JSON 문자열")
     parser.add_argument("--await-user", action="store_true", dest="await_user", help="사용자 인터랙션 요청 이벤트 강제 활성화")
     parser.add_argument(
         "--await-user-auto",
@@ -447,9 +530,14 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         help="요청 방향에 따라 적절한 단계에서 await_user 이벤트 자동 발생",
     )
     parser.add_argument("--await-stage", help="await_user 이벤트를 발생시킬 스테이지")
-    parser.add_argument("--await-timeout", type=float, help="await_user 응답 대기 시간(초)")
+    parser.add_argument("--await-timeout", help="await_user 응답 대기 시간(초)")
     parser.add_argument("--await-message", help="await_user 이벤트 메시지")
-    return parser.parse_args(argv)
+    args, extras = parser.parse_known_args(argv)
+    if extras:
+        setattr(args, "_extras", extras)
+    else:
+        setattr(args, "_extras", [])
+    return args
 
 
 def run_simulation(options: SimulatorOptions, listener: CommandStream) -> int:
