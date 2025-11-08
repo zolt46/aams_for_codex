@@ -63,7 +63,8 @@ const DEFAULT_CLEAR_TIMEOUT_MS = Number(process.env.CLEAR_TIMEOUT_MS || 25000);
 const DEFAULT_COUNT_TIMEOUT_MS = Number(process.env.COUNT_TIMEOUT_MS || 8000);
 
 const PYTHON_BIN = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
-const DEFAULT_ROBOT_SCRIPT = path.join(__dirname, '..', 'AAMS_ROBOT+RL+VIS', 'mission_controller_with_vision.py');
+// const DEFAULT_ROBOT_SCRIPT = path.join(__dirname, '..', 'AAMS_ROBOT+RL+VIS', 'mission_controller_with_vision.py');
+const DEFAULT_ROBOT_SCRIPT = path.join(__dirname, '..', 'AAMS_LOCAL_SERVER', 'robot_simulator.py');
 const ROBOT_SCRIPT = process.env.ROBOT_SCRIPT || DEFAULT_ROBOT_SCRIPT;
 const ROBOT_DISABLED = (process.env.ROBOT_DISABLED || '') === '1';
 const ROBOT_FORWARD_URL = process.env.ROBOT_FORWARD_URL || process.env.RENDER_ROBOT_URL || '';
